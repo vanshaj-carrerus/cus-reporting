@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# QR-Based Employee Attendance System
 
-## Getting Started
+Employees scan a personalized QR code (linking to `/checkin/[employeeId]`),
+their browser location is captured, and the server validates it against a
+geo-fence around the office using the Haversine formula. HR reviews results
+on `/admin`.
 
-First, run the development server:
+## Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- Next.js (App Router) + TypeScript
+- Tailwind CSS
+- MongoDB via Mongoose
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Copy the environment template and fill in your database + office details:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```bash
+   cp .env.example .env
+   ```
 
-## Learn More
+   | Variable | Purpose |
+   | --- | --- |
+   | `MONGODB_URI` | MongoDB connection string (local or Atlas) |
+   | `OFFICE_LATITUDE` / `OFFICE_LONGITUDE` | Office coordinates for geo-fencing |
+   | `OFFICE_RADIUS_METERS` | Allowed radius in meters (default 70) |
+   | `SHIFT_CUTOFF_HOUR` / `SHIFT_CUTOFF_MINUTE` | Shift start cutoff for "Late" status (default 09:15) |
 
-To learn more about Next.js, take a look at the following resources:
+2. Install dependencies and seed a few sample employees:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```bash
+   npm install
+   npm run seed
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3. Run the dev server:
 
-## Deploy on Vercel
+   ```bash
+   npm run dev
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Usage
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Employee check-in**: `/checkin/<employeeId>` — the seed script prints
+  each employee's URL (their MongoDB `_id`). In production, encode this URL
+  as a QR code per employee (e.g. a printed badge) so scanning it opens
+  their personalized check-in page directly. `/checkin` is a fallback entry
+  point where an employee can type their ID manually.
+- **Admin dashboard**: `/admin` — lists the day's check-ins, color-coded by
+  status, with a Google Maps link on each set of coordinates for auditing
+  flagged (Out of Location) entries. Use the date picker to view other days.
+
+## Data model
+
+- **Employee** (`src/models/Employee.ts`): `name` (unique, case-insensitive), `createdAt`
+- **Attendance** (`src/models/Attendance.ts`): `userId` (ref → Employee), `checkInTime`, `latitude`, `longitude`, `status` (`ON_TIME` / `LATE` / `OUT_OF_LOCATION`), `distanceFromOffice`
+
+Browse the raw data with a MongoDB GUI (MongoDB Compass, or Atlas's own UI
+if you're hosting there).
+
+## API
+
+- `POST /api/check-in` — body `{ userId, latitude, longitude }`. Returns
+  `201` on success (`ON_TIME`/`LATE`), `403` if outside the geo-fence
+  (`OUT_OF_LOCATION`, still logged for HR), `404` for an unknown employee,
+  and `409` if the employee already checked in today.
+- `GET /api/attendance?date=YYYY-MM-DD` — attendance records for a day
+  (defaults to today).
+
+## Notes
+
+- Distance is computed server-side with the Haversine formula
+  ([src/lib/geo.ts](src/lib/geo.ts)) — the client only ever sends raw coordinates.
+- Geolocation is requested with `enableHighAccuracy: true` and a 15s
+  timeout; permission-denied, timeout, and unsupported-browser states each
+  show a distinct, retryable error screen.
