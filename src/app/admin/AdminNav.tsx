@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users } from "lucide-react";
+import { LayoutDashboard, Users, QrCode } from "lucide-react";
 
 const TABS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/employees", label: "Employees", icon: Users },
+  { href: "/qr", label: "QR Code", icon: QrCode },
 ];
 
 export default function AdminNav() {

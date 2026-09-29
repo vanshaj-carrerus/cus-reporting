@@ -77,7 +77,6 @@ export default function Home() {
             <ShieldCheck size={13} />
             Secure, automated, tamper-resistant
           </div>
-
           <h1
             className="animate-fade-in-up text-balance text-4xl font-semibold tracking-tight sm:text-6xl"
             style={{ animationDelay: "80ms" }}

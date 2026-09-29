@@ -1,15 +1,20 @@
+import Image from "next/image";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
 
-export const BRAND_NAME = "CUS Reporting";
+export const BRAND_NAME = "CareerUS Solutions";
 
+// The site is dark, so the header uses the white-text logo.
 export function Brand() {
   return (
-    <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-tight">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/30 bg-accent/10 text-accent-text">
-        <ShieldCheck size={16} />
-      </span>
-      {BRAND_NAME}
+    <Link href="/" aria-label={BRAND_NAME} className="flex items-center">
+      <Image
+        src="/logo-light.png"
+        alt={BRAND_NAME}
+        width={4433}
+        height={1439}
+        priority
+        className="h-8 w-auto"
+      />
     </Link>
   );
 }
