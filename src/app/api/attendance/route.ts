@@ -1,27 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminApiGuard } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
+import { istDateKey, istDayRange, parseDateKey } from "@/lib/time";
 import { Attendance } from "@/models/Attendance";
 import "@/models/Employee"; // registers the Employee model for populate()
-
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
 
 // GET /api/attendance?date=YYYY-MM-DD — defaults to today.
 async function handleGet(request: NextRequest) {
   const dateParam = request.nextUrl.searchParams.get("date");
-  const targetDate = dateParam ? new Date(dateParam) : new Date();
+  const dateKey = dateParam ? parseDateKey(dateParam) : istDateKey();
 
-  if (Number.isNaN(targetDate.getTime())) {
+  if (!dateKey) {
     return NextResponse.json(
       { error: "Invalid date parameter, expected YYYY-MM-DD." },
       { status: 400 }
@@ -31,7 +20,7 @@ async function handleGet(request: NextRequest) {
   await connectToDatabase();
 
   const records = await Attendance.find({
-    checkInTime: { $gte: startOfDay(targetDate), $lte: endOfDay(targetDate) },
+    checkInTime: { $gte: istDayRange(dateKey).start, $lt: istDayRange(dateKey).end },
   })
     .populate("userId")
     .sort({ checkInTime: -1 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatIstDateTime } from "@/lib/time";
 import { readTodayCheckIn, saveTodayCheckIn } from "@/lib/checkinStorage";
 import {
   CheckCircle2,
@@ -54,7 +55,8 @@ export default function CheckInClient({ employeeId }: { employeeId: string }) {
     // Already checked in today on this device: never re-prompt for location,
     // and never let this browser act for a different employee.
     const saved = readTodayCheckIn();
-    if (saved) {
+    // (Ignore a rejected attempt saved by an older version of this page.)
+    if (saved && saved.status !== "OUT_OF_LOCATION") {
       if (saved.employeeId !== employeeId) {
         router.replace(`/checkin/${saved.employeeId}`);
         return;
@@ -135,11 +137,8 @@ export default function CheckInClient({ employeeId }: { employeeId: string }) {
       } else if (res.status === 403) {
         setStage("out-of-location");
         setResult(data);
-        saveTodayCheckIn({
-          employeeId,
-          checkInTime: data.attendance?.checkInTime,
-          status: "OUT_OF_LOCATION",
-        });
+        // Deliberately not saved locally: a rejected attempt isn't a check-in,
+        // and the employee must be able to retry.
         setMessage(
           `You're ${Math.round(
             data.distanceFromOffice
@@ -245,7 +244,7 @@ export default function CheckInClient({ employeeId }: { employeeId: string }) {
               <p className="text-lg font-semibold text-success">{message}</p>
               {result?.checkInTime && (
                 <p className="font-mono text-xs text-muted">
-                  {new Date(result.checkInTime).toLocaleString()}
+                  {formatIstDateTime(result.checkInTime)}
                 </p>
               )}
             </div>
@@ -259,7 +258,7 @@ export default function CheckInClient({ employeeId }: { employeeId: string }) {
               <p className="text-lg font-semibold text-info">{message}</p>
               {result?.checkInTime && (
                 <p className="font-mono text-xs text-muted">
-                  {new Date(result.checkInTime).toLocaleString()}
+                  {formatIstDateTime(result.checkInTime)}
                 </p>
               )}
             </div>

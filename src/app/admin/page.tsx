@@ -1,5 +1,12 @@
 import { requireAdmin } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
+import {
+  formatIstDate,
+  formatIstTime,
+  istDateKey,
+  istDayRange,
+  parseDateKey,
+} from "@/lib/time";
 import { Attendance, type AttendanceStatus } from "@/models/Attendance";
 import "@/models/Employee"; // registers the Employee model for populate()
 import type { EmployeeDoc } from "@/models/Employee";
@@ -14,18 +21,6 @@ import {
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
-}
 
 const STATUS_STYLES: Record<AttendanceStatus, string> = {
   ON_TIME: "border-accent/30 bg-success-bg text-success",
@@ -56,21 +51,18 @@ export default async function AdminDashboardPage({
 }) {
   await requireAdmin();
   const { date } = await searchParams;
-  const targetDate = date ? new Date(date) : new Date();
-  const dateValue = Number.isNaN(targetDate.getTime())
-    ? new Date()
-    : targetDate;
+  // The selected day is an IST calendar day; junk or missing input means today (IST).
+  const dateInputValue = (date && parseDateKey(date)) || istDateKey();
+  const { start, end } = istDayRange(dateInputValue);
 
   await connectToDatabase();
 
   const records = (await Attendance.find({
-    checkInTime: { $gte: startOfDay(dateValue), $lte: endOfDay(dateValue) },
+    checkInTime: { $gte: start, $lt: end },
   })
     .populate("userId")
     .sort({ checkInTime: -1 })
     .lean()) as unknown as PopulatedAttendance[];
-
-  const dateInputValue = dateValue.toISOString().slice(0, 10);
 
   const stats = [
     {
@@ -105,11 +97,7 @@ export default async function AdminDashboardPage({
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Attendance Dashboard</h1>
           <p className="text-sm text-muted">
-            {dateValue.toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
+            {formatIstDate(dateInputValue)} · IST
           </p>
         </div>
         <form method="GET" className="flex items-center gap-2">
@@ -190,7 +178,7 @@ export default async function AdminDashboardPage({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted">
-                    {new Date(record.checkInTime).toLocaleTimeString()}
+                    {formatIstTime(record.checkInTime)}
                   </td>
                   <td className="px-4 py-3">
                     <a

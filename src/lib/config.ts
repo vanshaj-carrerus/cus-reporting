@@ -12,7 +12,7 @@ export const OFFICE_RADIUS_METERS = parseFloat(
   process.env.OFFICE_RADIUS_METERS ?? "70"
 );
 
-// Shift cutoff time (24h, server-local time) — check-ins after this are "Late".
+// Shift cutoff time (24h, IST) — check-ins after this are "Late".
 export const SHIFT_CUTOFF_HOUR = parseInt(
   process.env.SHIFT_CUTOFF_HOUR ?? "9",
   10

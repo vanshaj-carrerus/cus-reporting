@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Employee } from "@/models/Employee";
 import { Attendance } from "@/models/Attendance";
+import { istDateKey, istDayRange, istTimeOfDay } from "@/lib/time";
 import { haversineDistanceMeters } from "@/lib/geo";
 import {
   OFFICE_LOCATION,
@@ -31,21 +32,8 @@ function isValidCoordinate(lat: unknown, lon: unknown): lat is number {
 }
 
 function isLateArrival(now: Date): boolean {
-  const cutoff = new Date(now);
-  cutoff.setHours(SHIFT_CUTOFF_HOUR, SHIFT_CUTOFF_MINUTE, 0, 0);
+  const cutoff = istTimeOfDay(now, SHIFT_CUTOFF_HOUR, SHIFT_CUTOFF_MINUTE);
   return now > cutoff;
-}
-
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(23, 59, 59, 999);
-  return d;
 }
 
 async function handleCheckIn(request: NextRequest) {
@@ -84,11 +72,19 @@ async function handleCheckIn(request: NextRequest) {
 
   const now = new Date();
 
-  // Prevent duplicate check-ins for the same employee on the same day.
-  const existing = await Attendance.findOne({
+  const today = istDayRange(istDateKey(now));
+
+  const todaysRecords = await Attendance.find({
     userId,
-    checkInTime: { $gte: startOfDay(now), $lte: endOfDay(now) },
+    checkInTime: { $gte: today.start, $lt: today.end },
   }).sort({ checkInTime: -1 });
+
+  // Only an accepted check-in counts as "already checked in". A rejected
+  // (out-of-location) attempt must not block a retry from the office.
+  const existing = todaysRecords.find((r) => r.status !== "OUT_OF_LOCATION");
+  const rejected = todaysRecords.find((r) => r.status === "OUT_OF_LOCATION");
+
+  // Prevent duplicate check-ins for the same employee on the same day.
   if (existing) {
     return NextResponse.json(
       {
@@ -114,14 +110,22 @@ async function handleCheckIn(request: NextRequest) {
       ? "LATE"
       : "ON_TIME";
 
-  const attendance = await Attendance.create({
-    userId,
+  // Keep a single row per day: a new attempt (rejected or accepted) replaces
+  // the earlier rejected one instead of piling up duplicates.
+  const fields = {
     checkInTime: now,
     latitude,
     longitude,
     status,
     distanceFromOffice: distance,
-  });
+  };
+  let attendance;
+  if (rejected) {
+    rejected.set(fields);
+    attendance = await rejected.save();
+  } else {
+    attendance = await Attendance.create({ userId, ...fields });
+  }
 
   if (!atOffice) {
     // Logged for HR visibility, but the check-in itself is rejected.

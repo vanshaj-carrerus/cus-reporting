@@ -2,18 +2,10 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Employee } from "@/models/Employee";
 import AddEmployeeForm from "./AddEmployeeForm";
+import EmployeeRow from "./EmployeeRow";
 import { Users } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
 
 export default async function AdminEmployeesPage() {
   await requireAdmin();
@@ -43,12 +35,15 @@ export default async function AdminEmployeesPage() {
               <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
                 Name
               </th>
+              <th className="px-4 py-3 text-right font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {employees.length === 0 && (
               <tr>
-                <td colSpan={1} className="px-4 py-10">
+                <td colSpan={2} className="px-4 py-10">
                   <div className="flex flex-col items-center gap-2 text-center text-muted">
                     <Users size={20} />
                     No employees yet. Add one above.
@@ -57,20 +52,12 @@ export default async function AdminEmployeesPage() {
               </tr>
             )}
             {employees.map((employee, i) => (
-              <tr
+              <EmployeeRow
                 key={employee._id.toString()}
-                className="animate-fade-in-up transition-smooth hover:bg-surface-2"
-                style={{ animationDelay: `${i * 30}ms` }}
-              >
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/10 text-xs font-semibold text-accent-text">
-                      {initials(employee.name)}
-                    </div>
-                    <span className="font-medium">{employee.name}</span>
-                  </div>
-                </td>
-              </tr>
+                id={employee._id.toString()}
+                name={employee.name}
+                delay={i * 30}
+              />
             ))}
           </tbody>
         </table>

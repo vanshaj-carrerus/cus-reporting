@@ -5,7 +5,6 @@ import {
   ArrowRight,
   ShieldCheck,
   ScanLine,
-  Lock,
   UserCheck,
   MapPin,
   CheckCircle2,
