@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus, AlertCircle } from "lucide-react";
-import SetupCodeNotice from "./SetupCodeNotice";
 
 const NAME_MAX_LENGTH = 80;
 
@@ -12,13 +11,13 @@ export default function AddEmployeeForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [issued, setIssued] = useState<{ name: string; email: string; code: string } | null>(null);
+  const [added, setAdded] = useState<{ name: string; email: string } | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setIssued(null);
+    setAdded(null);
 
     const cleaned = name.trim().replace(/\s+/g, " ");
     if (!cleaned) {
@@ -45,7 +44,7 @@ export default function AddEmployeeForm() {
         return;
       }
 
-      setIssued({ name: data.employee.name, email: data.employee.email, code: data.setupCode });
+      setAdded({ name: data.employee.name, email: data.employee.email });
       setName("");
       setEmail("");
       router.refresh();
@@ -117,10 +116,11 @@ export default function AddEmployeeForm() {
           {submitting ? "Adding…" : "Add Employee"}
         </button>
       </div>
-      {issued && (
-        <div className="mt-3">
-          <SetupCodeNotice {...issued} onDismiss={() => setIssued(null)} />
-        </div>
+      {added && (
+        <p role="status" className="animate-fade-in-up mt-3 text-sm text-success">
+          Added {added.name}. They can open the app, choose &ldquo;Set or reset your password&rdquo;,
+          and a verification code will be emailed to {added.email}.
+        </p>
       )}
       {error && (
         <p

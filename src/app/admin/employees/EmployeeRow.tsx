@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2, Check, X, KeyRound } from "lucide-react";
-import SetupCodeNotice from "./SetupCodeNotice";
+import { Pencil, Trash2, Check, X } from "lucide-react";
 
 const NAME_MAX_LENGTH = 80;
 const EMAIL_MAX_LENGTH = 254;
@@ -16,8 +15,6 @@ function initials(name: string): string {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 }
-
-type ApiResult = { setupCode?: string; employee?: { email?: string | null } };
 
 /** Where an employee is in getting started: no email → invited → active. */
 function accountState(email: string | null, passwordSet: boolean) {
@@ -41,8 +38,6 @@ export default function EmployeeRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [issued, setIssued] = useState<{ email: string; code: string } | null>(null);
   const [value, setValue] = useState(name);
   const [emailValue, setEmailValue] = useState(email ?? "");
   const [busy, setBusy] = useState(false);
@@ -51,30 +46,27 @@ export default function EmployeeRow({
 
   const state = accountState(email, passwordSet);
 
-  /** Returns the response body on success, or null after showing the error. */
-  async function request(
-    method: "PATCH" | "POST" | "DELETE",
-    options: { body?: object; path?: string } = {}
-  ): Promise<ApiResult | null> {
+  /** Returns true on success, or false after showing the error. */
+  async function request(method: "PATCH" | "DELETE", body?: object): Promise<boolean> {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/employees/${id}${options.path ?? ""}`, {
+      const res = await fetch(`/api/employees/${id}`, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: options.body ? JSON.stringify(options.body) : undefined,
+        body: body ? JSON.stringify(body) : undefined,
       });
       // The body may not be JSON if something upstream failed, so don't assume it.
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error ?? `Request failed (error ${res.status}).`);
-        return null;
+        return false;
       }
       router.refresh();
-      return data;
+      return true;
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
-      return null;
+      return false;
     } finally {
       setBusy(false);
     }
@@ -98,21 +90,7 @@ export default function EmployeeRow({
       setEditing(false);
       return;
     }
-    const data = await request("PATCH", { body: changes });
-    if (!data) return;
-    setEditing(false);
-    // Only sent when this employee had no email before: they now need a code.
-    if (data.setupCode) {
-      setIssued({ email: data.employee?.email ?? cleanedEmail, code: data.setupCode });
-    }
-  }
-
-  async function resetPassword() {
-    const data = await request("POST", { path: "/reset-password" });
-    setResetting(false);
-    if (data?.setupCode) {
-      setIssued({ email: data.employee?.email ?? email ?? "", code: data.setupCode });
-    }
+    if (await request("PATCH", changes)) setEditing(false);
   }
 
   function cancelEdit() {
@@ -187,21 +165,11 @@ export default function EmployeeRow({
             Delete {name}? This also removes their account and all their attendance records.
           </p>
         )}
-        {resetting && (
-          <p className="mt-2 text-xs text-danger">
-            Reset {name}&apos;s password? They&apos;ll be signed out everywhere and need a new
-            setup code to choose a password again.
+        {editing && email && emailValue.trim().toLowerCase() !== email && (
+          <p className="mt-2 text-xs text-warning">
+            Changing the email signs {name} out and clears their password. They set a new one
+            with a code emailed to the new address.
           </p>
-        )}
-        {issued && (
-          <div className="mt-2">
-            <SetupCodeNotice
-              name={name}
-              email={issued.email}
-              code={issued.code}
-              onDismiss={() => setIssued(null)}
-            />
-          </div>
         )}
         {error && (
           <p role="alert" className="mt-2 text-xs text-danger">
@@ -243,27 +211,6 @@ export default function EmployeeRow({
                 <X size={15} />
               </button>
             </>
-          ) : resetting ? (
-            <>
-              <button
-                disabled={busy}
-                onClick={resetPassword}
-                className="rounded-lg bg-danger px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
-              >
-                {busy ? "Resetting…" : "Reset"}
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  setResetting(false);
-                  setError(null);
-                }}
-                className={iconBtn}
-                aria-label="Cancel"
-              >
-                <X size={15} />
-              </button>
-            </>
           ) : (
             <>
               <button
@@ -271,32 +218,12 @@ export default function EmployeeRow({
                 onClick={() => {
                   setValue(name);
                   setEmailValue(email ?? "");
-                  setIssued(null);
                   setEditing(true);
                 }}
                 className={`${iconBtn} hover:text-accent-text`}
               >
                 <Pencil size={14} />
               </button>
-              {email && (
-                <button
-                  aria-label={
-                    passwordSet
-                      ? `Reset password for ${name}`
-                      : `New setup code for ${name}`
-                  }
-                  title={passwordSet ? "Reset password" : "New setup code"}
-                  onClick={() => {
-                    setIssued(null);
-                    // Nothing to lose before first setup, so no confirmation.
-                    if (passwordSet) setResetting(true);
-                    else resetPassword();
-                  }}
-                  className={`${iconBtn} hover:text-accent-text`}
-                >
-                  <KeyRound size={14} />
-                </button>
-              )}
               <button
                 aria-label={`Delete ${name}`}
                 onClick={() => setConfirming(true)}

@@ -5,7 +5,6 @@ import { normalizeEmail } from "@/lib/email";
 import { employeeForAdmin } from "@/lib/employeeView";
 import { isDuplicateKeyError, isDuplicateOn } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
-import { newSetupCode } from "@/lib/setupCode";
 import {
   Employee,
   EMPLOYEE_NAME_MAX_LENGTH,
@@ -18,9 +17,9 @@ const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 type Ctx = { params: Promise<{ id: string }> };
 
 // PATCH /api/employees/:id — change an employee's name and/or email. Send only
-// the fields to change. Changing the email changes what they sign in with.
-// An employee who had no email yet (added before accounts existed) gets a
-// `setupCode` back the first time one is set — they need it to set a password.
+// the fields to change. Changing the email changes what they sign in with, so
+// the new address has to be verified again: the employee's password and any
+// sessions are cleared, and they set a new password with a code emailed to it.
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const denied = adminApiGuard(request);
   if (denied) return denied;
@@ -111,21 +110,29 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       return NextResponse.json({ error: "Employee not found." }, { status: 404 });
     }
 
-    const issued =
-      changes.email !== undefined && !existing.email ? await newSetupCode() : null;
+    const emailChanged = changes.email !== undefined && changes.email !== existing.email;
+    const update = emailChanged
+      ? {
+          ...changes,
+          $unset: {
+            passwordHash: 1,
+            passwordSetAt: 1,
+            verifyCodeHash: 1,
+            verifyCodeExpiresAt: 1,
+            verifyCodeSentAt: 1,
+            verifyCodeAttempts: 1,
+          },
+        }
+      : changes;
 
-    const employee = await Employee.findByIdAndUpdate(
-      id,
-      { ...changes, ...issued?.fields },
-      { new: true, runValidators: true }
-    );
+    const employee = await Employee.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    });
     if (!employee) {
       return NextResponse.json({ error: "Employee not found." }, { status: 404 });
     }
-    return NextResponse.json({
-      employee: employeeForAdmin(employee),
-      ...(issued ? { setupCode: issued.code } : {}),
-    });
+    return NextResponse.json({ employee: employeeForAdmin(employee) });
   } catch (error) {
     if (isDuplicateKeyError(error)) {
       return isDuplicateOn(error, "email") ? duplicateEmail() : duplicateName();

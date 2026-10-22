@@ -4,7 +4,6 @@ import { normalizeEmail } from "@/lib/email";
 import { employeeForAdmin } from "@/lib/employeeView";
 import { isDuplicateKeyError, isDuplicateOn } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
-import { newSetupCode } from "@/lib/setupCode";
 import {
   Employee,
   EMPLOYEE_NAME_MAX_LENGTH,
@@ -35,8 +34,8 @@ interface CreateEmployeeBody {
 }
 
 // POST /api/employees — admin-only creation of a new employee. The email is the
-// employee's login. The response includes a one-time `setupCode` (shown only
-// now): the employee needs it, with their email, to set their own password.
+// employee's login. Nothing is handed to the employee: they open the app, ask for
+// a verification code to be emailed to that address, and set their own password.
 export async function POST(request: NextRequest) {
   const denied = adminApiGuard(request);
   if (denied) return denied;
@@ -98,12 +97,8 @@ export async function POST(request: NextRequest) {
       return duplicateEmail();
     }
 
-    const { code, fields } = await newSetupCode();
-    const employee = await Employee.create({ name, email, ...fields });
-    return NextResponse.json(
-      { employee: employeeForAdmin(employee), setupCode: code },
-      { status: 201 }
-    );
+    const employee = await Employee.create({ name, email });
+    return NextResponse.json({ employee: employeeForAdmin(employee) }, { status: 201 });
   } catch (error) {
     // Two requests can race past the checks above; the unique indexes catch it.
     if (isDuplicateKeyError(error)) {

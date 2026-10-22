@@ -5,21 +5,28 @@ import { normalizeEmail } from "@/lib/email";
 import { connectToDatabase } from "@/lib/mongodb";
 import { hashPassword, passwordProblem } from "@/lib/password";
 import { clientIp, getLimiter } from "@/lib/rateLimit";
-import { normalizeSetupCode, verifySetupCode } from "@/lib/setupCode";
+import {
+  normalizeVerificationCode,
+  VERIFICATION_CODE_MAX_ATTEMPTS,
+  verifyVerificationCode,
+} from "@/lib/verificationCode";
 import { Employee } from "@/models/Employee";
 
 const NOT_CONFIGURED =
   "Employee sign-in isn't configured. Set ADMIN_SESSION_SECRET (at least 32 characters) in .env and restart the server.";
 
-// Two buckets: per client + email, and a looser one per client so someone can't
-// probe a list of emails to see which ones the admin registered.
-const perEmailLimiter = getLimiter("employee-activate", 5, 15 * 60 * 1000);
-const perClientLimiter = getLimiter("employee-activate-client", 20, 15 * 60 * 1000);
+const WRONG_CODE = "That code isn't right. Check it and try again.";
+const NO_CODE = "That code has expired. Ask for a new one.";
 
-// POST /api/auth/activate — first-time setup (or after an admin reset): the
-// employee chooses their password. Needs the email AND the one-time setup code
-// the admin gave them, so nobody can claim an account just by knowing its email.
-// The code works once; afterwards they sign in.
+// Two buckets: per client + email, and a looser one per client so someone can't
+// probe a list of emails.
+const perEmailLimiter = getLimiter("employee-activate", 10, 15 * 60 * 1000);
+const perClientLimiter = getLimiter("employee-activate-client", 30, 15 * 60 * 1000);
+
+// POST /api/auth/activate — set or reset the password. Needs the email AND the
+// 6-digit code emailed to it (see /api/auth/request-code), which proves the
+// employee controls that inbox. The code works once. On success every earlier
+// session for this account ends, and the employee is signed in.
 export async function POST(request: NextRequest) {
   if (!isEmployeeAuthConfigured()) {
     console.error(NOT_CONFIGURED);
@@ -38,15 +45,12 @@ export async function POST(request: NextRequest) {
 
   const email = normalizeEmail(body.email);
   if (!email) {
-    return NextResponse.json(
-      { error: "Enter the email address your admin registered for you." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
-  const code = normalizeSetupCode(body.code);
+  const code = normalizeVerificationCode(body.code);
   if (!code) {
     return NextResponse.json(
-      { error: "Enter the setup code your admin gave you (8 characters)." },
+      { error: "Enter the 6-digit code from the email." },
       { status: 400 }
     );
   }
@@ -71,73 +75,67 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const fail = (error: string, status: number) => {
+    perEmailLimiter.recordFailure(emailKey);
+    perClientLimiter.recordFailure(client);
+    return NextResponse.json({ error }, { status });
+  };
+
   try {
     await connectToDatabase();
 
-    const pending = await Employee.findOne({ email }).select(
-      "+passwordHash +setupCodeHash +setupCodeExpiresAt"
+    const employee = await Employee.findOne({ email }).select(
+      "+verifyCodeHash +verifyCodeExpiresAt +verifyCodeAttempts"
     );
 
-    if (pending?.passwordHash) {
-      perEmailLimiter.recordFailure(emailKey);
-      perClientLimiter.recordFailure(client);
-      return NextResponse.json(
-        {
-          error: "This account already has a password. Sign in instead.",
-          code: "ALREADY_ACTIVE",
-        },
-        { status: 409 }
-      );
+    // Check the code even when there's nothing to match, so the response time
+    // doesn't reveal which emails are registered.
+    const codeOk = await verifyVerificationCode(code, employee?.verifyCodeHash);
+
+    // Unknown email and "no code requested" answer the same way.
+    if (!employee || !employee.verifyCodeHash || !employee.verifyCodeExpiresAt) {
+      return fail(NO_CODE, 400);
+    }
+    if (employee.verifyCodeExpiresAt.getTime() < Date.now()) {
+      return fail(NO_CODE, 400);
     }
 
-    // Verify even when there's nothing to match, so the response time doesn't
-    // reveal which emails are registered. Unknown email, no code issued and a
-    // wrong code all look the same.
-    const codeOk = await verifySetupCode(code, pending?.setupCodeHash);
-    if (!pending || !codeOk) {
-      perEmailLimiter.recordFailure(emailKey);
-      perClientLimiter.recordFailure(client);
-      return NextResponse.json(
-        {
-          error:
-            "That email and setup code don't match. Check them, or ask your admin for a new code.",
-        },
-        { status: 404 }
-      );
+    const attempts = employee.verifyCodeAttempts ?? 0;
+    if (attempts >= VERIFICATION_CODE_MAX_ATTEMPTS) {
+      return fail("Too many wrong codes. Ask for a new one.", 400);
     }
-    if (!pending.setupCodeExpiresAt || pending.setupCodeExpiresAt.getTime() < Date.now()) {
-      return NextResponse.json(
-        { error: "This setup code has expired. Ask your admin for a new one." },
-        { status: 410 }
+
+    if (!codeOk) {
+      await Employee.updateOne(
+        { _id: employee._id, verifyCodeHash: employee.verifyCodeHash },
+        { $inc: { verifyCodeAttempts: 1 } }
       );
+      return fail(WRONG_CODE, 400);
     }
 
     const passwordHash = await hashPassword(password);
 
     // Atomic: the code is consumed as the password is set, so two simultaneous
-    // requests can't both succeed, and the code can't be reused.
-    const employee = await Employee.findOneAndUpdate(
-      { _id: pending._id, passwordHash: null, setupCodeHash: pending.setupCodeHash },
+    // requests can't both succeed and the code can't be reused.
+    const updated = await Employee.findOneAndUpdate(
+      { _id: employee._id, verifyCodeHash: employee.verifyCodeHash },
       {
         passwordHash,
         passwordSetAt: new Date(),
-        $unset: { setupCodeHash: 1, setupCodeExpiresAt: 1 },
+        $unset: {
+          verifyCodeHash: 1,
+          verifyCodeExpiresAt: 1,
+          verifyCodeSentAt: 1,
+          verifyCodeAttempts: 1,
+        },
       },
       { new: true }
     );
-    if (!employee) {
-      return NextResponse.json(
-        { error: "This account was just set up. Try signing in." },
-        { status: 409 }
-      );
-    }
+    if (!updated) return fail(NO_CODE, 400);
 
     perEmailLimiter.clear(emailKey);
-    const response = NextResponse.json(
-      { employee: employeeProfile(employee) },
-      { status: 201 }
-    );
-    startEmployeeSession(response, employee._id.toString());
+    const response = NextResponse.json({ employee: employeeProfile(updated) });
+    startEmployeeSession(response, updated._id.toString());
     return response;
   } catch (error) {
     console.error("POST /api/auth/activate failed:", error);

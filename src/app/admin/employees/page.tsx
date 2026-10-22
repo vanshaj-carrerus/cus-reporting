@@ -17,7 +17,7 @@ export default async function AdminEmployeesPage() {
       <div className="animate-fade-in-up mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Employees</h1>
         <p className="text-sm text-muted">
-          Each employee signs in to the app with their own email and password. Give a new employee their setup code so they can choose a password; reset it if they forget.
+          Each employee signs in to the app with their own email and password. They set or reset it themselves: the app emails a verification code to the address you register here.
         </p>
       </div>
 

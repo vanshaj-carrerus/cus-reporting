@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "You haven't set your password yet. Use “Set your password” to finish setting up your account.",
+            "You haven't set your password yet. Choose “Set or reset your password” to get a verification code by email.",
           code: "PASSWORD_NOT_SET",
         },
         { status: 409 }
