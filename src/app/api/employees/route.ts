@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminApiGuard } from "@/lib/adminAuth";
+import { normalizeEmail } from "@/lib/email";
+import { employeeForAdmin } from "@/lib/employeeView";
+import { isDuplicateKeyError, isDuplicateOn } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
+import { newSetupCode } from "@/lib/setupCode";
 import {
   Employee,
   EMPLOYEE_NAME_MAX_LENGTH,
@@ -9,16 +13,8 @@ import {
 
 const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: number }).code === 11000
-  );
-}
-
-// GET /api/employees — list all employees (used to populate the check-in dropdown).
+// GET /api/employees — list all employees, with their email and whether they've
+// set a password yet (passwordSetAt). The password hash is never selected.
 export async function GET(request: NextRequest) {
   const denied = adminApiGuard(request);
   if (denied) return denied;
@@ -26,7 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     await connectToDatabase();
     const employees = await Employee.find().sort({ name: 1 });
-    return NextResponse.json({ employees });
+    return NextResponse.json({ employees: employees.map(employeeForAdmin) });
   } catch (error) {
     console.error("GET /api/employees failed:", error);
     return NextResponse.json({ error: DB_ERROR }, { status: 500 });
@@ -35,9 +31,12 @@ export async function GET(request: NextRequest) {
 
 interface CreateEmployeeBody {
   name?: unknown;
+  email?: unknown;
 }
 
-// POST /api/employees — admin-only creation of a new employee record.
+// POST /api/employees — admin-only creation of a new employee. The email is the
+// employee's login. The response includes a one-time `setupCode` (shown only
+// now): the employee needs it, with their email, to set their own password.
 export async function POST(request: NextRequest) {
   const denied = adminApiGuard(request);
   if (denied) return denied;
@@ -69,9 +68,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const duplicate = (name: string) =>
+  const email = normalizeEmail(body.email);
+  if (!email) {
+    return NextResponse.json(
+      { error: "A valid email address is required." },
+      { status: 400 }
+    );
+  }
+
+  const duplicateName = (name: string) =>
     NextResponse.json(
       { error: `An employee named "${name}" already exists.` },
+      { status: 409 }
+    );
+  const duplicateEmail = () =>
+    NextResponse.json(
+      { error: `An employee with the email ${email} already exists.` },
       { status: 409 }
     );
 
@@ -80,15 +92,22 @@ export async function POST(request: NextRequest) {
 
     const existing = await Employee.findOne({ name }).collation(NAME_COLLATION);
     if (existing) {
-      return duplicate(existing.name);
+      return duplicateName(existing.name);
+    }
+    if (await Employee.exists({ email })) {
+      return duplicateEmail();
     }
 
-    const employee = await Employee.create({ name });
-    return NextResponse.json({ employee }, { status: 201 });
+    const { code, fields } = await newSetupCode();
+    const employee = await Employee.create({ name, email, ...fields });
+    return NextResponse.json(
+      { employee: employeeForAdmin(employee), setupCode: code },
+      { status: 201 }
+    );
   } catch (error) {
-    // Two requests can race past the check above; the unique index catches it.
+    // Two requests can race past the checks above; the unique indexes catch it.
     if (isDuplicateKeyError(error)) {
-      return duplicate(name);
+      return isDuplicateOn(error, "email") ? duplicateEmail() : duplicateName(name);
     }
     console.error("POST /api/employees failed:", error);
     return NextResponse.json({ error: DB_ERROR }, { status: 500 });

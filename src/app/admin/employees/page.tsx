@@ -17,7 +17,7 @@ export default async function AdminEmployeesPage() {
       <div className="animate-fade-in-up mb-6">
         <h1 className="text-3xl font-semibold tracking-tight">Employees</h1>
         <p className="text-sm text-muted">
-          Only employees added here can appear on the check-in page.
+          Each employee signs in to the app with their own email and password. Give a new employee their setup code so they can choose a password; reset it if they forget.
         </p>
       </div>
 
@@ -56,6 +56,8 @@ export default async function AdminEmployeesPage() {
                 key={employee._id.toString()}
                 id={employee._id.toString()}
                 name={employee.name}
+                email={employee.email ?? null}
+                passwordSet={Boolean(employee.passwordSetAt)}
                 delay={i * 30}
               />
             ))}

@@ -1,5 +1,19 @@
 const EARTH_RADIUS_METERS = 6371000;
 
+/** True for a finite latitude/longitude pair within the valid ranges. */
+export function isValidCoordinate(lat: unknown, lon: unknown): lat is number {
+  return (
+    typeof lat === "number" &&
+    typeof lon === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
+}
+
 function toRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }

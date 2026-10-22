@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/mongodb";
-import { Employee } from "@/models/Employee";
 import { Attendance } from "@/models/Attendance";
+import { requireEmployee } from "@/lib/employeeAuth";
 import { istDateKey, istDayRange, istTimeOfDay } from "@/lib/time";
-import { haversineDistanceMeters } from "@/lib/geo";
+import { haversineDistanceMeters, isValidCoordinate } from "@/lib/geo";
 import {
   OFFICE_LOCATION,
   OFFICE_RADIUS_METERS,
@@ -13,22 +12,8 @@ import {
 } from "@/lib/config";
 
 interface CheckInBody {
-  userId?: string;
   latitude?: number;
   longitude?: number;
-}
-
-function isValidCoordinate(lat: unknown, lon: unknown): lat is number {
-  return (
-    typeof lat === "number" &&
-    typeof lon === "number" &&
-    Number.isFinite(lat) &&
-    Number.isFinite(lon) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lon >= -180 &&
-    lon <= 180
-  );
 }
 
 function isLateArrival(now: Date): boolean {
@@ -37,6 +22,11 @@ function isLateArrival(now: Date): boolean {
 }
 
 async function handleCheckIn(request: NextRequest) {
+  // Who is checking in comes from the signed-in session, never from the body.
+  const auth = await requireEmployee(request);
+  if ("denied" in auth) return auth.denied;
+  const userId = auth.employee._id;
+
   let body: CheckInBody;
   try {
     body = await request.json();
@@ -47,14 +37,7 @@ async function handleCheckIn(request: NextRequest) {
     );
   }
 
-  const { userId, latitude, longitude } = body;
-
-  if (!userId || typeof userId !== "string" || !Types.ObjectId.isValid(userId)) {
-    return NextResponse.json(
-      { error: "A valid userId is required." },
-      { status: 400 }
-    );
-  }
+  const { latitude, longitude } = body;
 
   if (!isValidCoordinate(latitude, longitude)) {
     return NextResponse.json(
@@ -64,11 +47,6 @@ async function handleCheckIn(request: NextRequest) {
   }
 
   await connectToDatabase();
-
-  const employee = await Employee.findById(userId);
-  if (!employee) {
-    return NextResponse.json({ error: "This employee no longer exists. Please contact your admin." }, { status: 404 });
-  }
 
   const now = new Date();
 

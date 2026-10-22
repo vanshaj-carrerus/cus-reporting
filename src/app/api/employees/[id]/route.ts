@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { adminApiGuard } from "@/lib/adminAuth";
+import { normalizeEmail } from "@/lib/email";
+import { employeeForAdmin } from "@/lib/employeeView";
+import { isDuplicateKeyError, isDuplicateOn } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
+import { newSetupCode } from "@/lib/setupCode";
 import {
   Employee,
   EMPLOYEE_NAME_MAX_LENGTH,
@@ -13,16 +17,10 @@ const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: number }).code === 11000
-  );
-}
-
-// PATCH /api/employees/:id — rename an employee.
+// PATCH /api/employees/:id — change an employee's name and/or email. Send only
+// the fields to change. Changing the email changes what they sign in with.
+// An employee who had no email yet (added before accounts existed) gets a
+// `setupCode` back the first time one is set — they need it to set a password.
 export async function PATCH(request: NextRequest, { params }: Ctx) {
   const denied = adminApiGuard(request);
   if (denied) return denied;
@@ -32,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Invalid employee id." }, { status: 400 });
   }
 
-  let body: { name?: unknown };
+  let body: { name?: unknown; email?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -42,45 +40,96 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     );
   }
 
-  if (typeof body.name !== "string") {
-    return NextResponse.json({ error: "Name is required." }, { status: 400 });
+  const changes: { name?: string; email?: string } = {};
+
+  if (body.name !== undefined) {
+    if (typeof body.name !== "string") {
+      return NextResponse.json({ error: "Name is required." }, { status: 400 });
+    }
+    const name = body.name.trim().replace(/\s+/g, " ");
+    if (!name) {
+      return NextResponse.json({ error: "Name is required." }, { status: 400 });
+    }
+    if (name.length > EMPLOYEE_NAME_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `Name must be at most ${EMPLOYEE_NAME_MAX_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
+    changes.name = name;
   }
-  const name = body.name.trim().replace(/\s+/g, " ");
-  if (!name) {
-    return NextResponse.json({ error: "Name is required." }, { status: 400 });
+
+  if (body.email !== undefined) {
+    const email = normalizeEmail(body.email);
+    if (!email) {
+      return NextResponse.json(
+        { error: "A valid email address is required." },
+        { status: 400 }
+      );
+    }
+    changes.email = email;
   }
-  if (name.length > EMPLOYEE_NAME_MAX_LENGTH) {
+
+  if (changes.name === undefined && changes.email === undefined) {
     return NextResponse.json(
-      { error: `Name must be at most ${EMPLOYEE_NAME_MAX_LENGTH} characters.` },
+      { error: "Send a name and/or email to update." },
       { status: 400 }
     );
   }
 
-  const duplicate = () =>
+  const duplicateName = () =>
     NextResponse.json(
-      { error: `An employee named "${name}" already exists.` },
+      { error: `An employee named "${changes.name}" already exists.` },
+      { status: 409 }
+    );
+  const duplicateEmail = () =>
+    NextResponse.json(
+      { error: `An employee with the email ${changes.email} already exists.` },
       { status: 409 }
     );
 
   try {
     await connectToDatabase();
 
-    const clash = await Employee.findOne({ name, _id: { $ne: id } }).collation(
-      NAME_COLLATION
-    );
-    if (clash) return duplicate();
+    if (changes.name !== undefined) {
+      const clash = await Employee.findOne({
+        name: changes.name,
+        _id: { $ne: id },
+      }).collation(NAME_COLLATION);
+      if (clash) return duplicateName();
+    }
+    if (changes.email !== undefined) {
+      const clash = await Employee.exists({
+        email: changes.email,
+        _id: { $ne: id },
+      });
+      if (clash) return duplicateEmail();
+    }
+
+    const existing = await Employee.findById(id).select("email");
+    if (!existing) {
+      return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+    }
+
+    const issued =
+      changes.email !== undefined && !existing.email ? await newSetupCode() : null;
 
     const employee = await Employee.findByIdAndUpdate(
       id,
-      { name },
+      { ...changes, ...issued?.fields },
       { new: true, runValidators: true }
     );
     if (!employee) {
       return NextResponse.json({ error: "Employee not found." }, { status: 404 });
     }
-    return NextResponse.json({ employee });
+    return NextResponse.json({
+      employee: employeeForAdmin(employee),
+      ...(issued ? { setupCode: issued.code } : {}),
+    });
   } catch (error) {
-    if (isDuplicateKeyError(error)) return duplicate();
+    if (isDuplicateKeyError(error)) {
+      return isDuplicateOn(error, "email") ? duplicateEmail() : duplicateName();
+    }
     console.error("PATCH /api/employees/[id] failed:", error);
     return NextResponse.json({ error: DB_ERROR }, { status: 500 });
   }

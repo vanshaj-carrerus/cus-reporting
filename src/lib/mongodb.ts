@@ -23,9 +23,9 @@ globalForMongoose.mongoose = cache;
 async function connectAndPrepare(uri: string): Promise<typeof mongoose> {
   const conn = await mongoose.connect(uri);
 
-  // Brings Employee indexes in line with the schema: creates the unique
-  // (case-insensitive) name index and drops the old unique email index, which
-  // would otherwise reject every new employee that has no email.
+  // Brings Employee indexes in line with the schema: the unique
+  // (case-insensitive) name index and the partial unique email index (partial,
+  // so employees without an email don't collide).
   try {
     await Employee.syncIndexes();
   } catch (error) {

@@ -3,22 +3,30 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { UserPlus, AlertCircle } from "lucide-react";
+import SetupCodeNotice from "./SetupCodeNotice";
 
 const NAME_MAX_LENGTH = 80;
 
 export default function AddEmployeeForm() {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [issued, setIssued] = useState<{ name: string; email: string; code: string } | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setIssued(null);
 
     const cleaned = name.trim().replace(/\s+/g, " ");
     if (!cleaned) {
       setError("Please enter the employee's name.");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Please enter the employee's email — it's what they sign in with.");
       return;
     }
 
@@ -27,7 +35,7 @@ export default function AddEmployeeForm() {
       const res = await fetch("/api/employees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: cleaned }),
+        body: JSON.stringify({ name: cleaned, email: email.trim() }),
       });
       // The body may not be JSON if something upstream failed, so don't assume it.
       const data = await res.json().catch(() => ({}));
@@ -37,7 +45,9 @@ export default function AddEmployeeForm() {
         return;
       }
 
+      setIssued({ name: data.employee.name, email: data.employee.email, code: data.setupCode });
       setName("");
+      setEmail("");
       router.refresh();
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
@@ -75,6 +85,29 @@ export default function AddEmployeeForm() {
             }`}
           />
         </div>
+        <div className="min-w-56 flex-1">
+          <label htmlFor="employee-email" className="mb-1 block text-xs font-medium text-muted">
+            Employee email
+          </label>
+          <input
+            id="employee-email"
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="e.g. asha@company.com"
+            autoComplete="off"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "employee-name-error" : undefined}
+            className={`transition-smooth w-full rounded-lg border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:ring-2 ${
+              error
+                ? "border-danger/60 focus:border-danger focus:ring-danger/20"
+                : "border-border focus:border-accent focus:ring-accent/20"
+            }`}
+          />
+        </div>
         <button
           type="submit"
           disabled={submitting}
@@ -84,6 +117,11 @@ export default function AddEmployeeForm() {
           {submitting ? "Adding…" : "Add Employee"}
         </button>
       </div>
+      {issued && (
+        <div className="mt-3">
+          <SetupCodeNotice {...issued} onDismiss={() => setIssued(null)} />
+        </div>
+      )}
       {error && (
         <p
           id="employee-name-error"

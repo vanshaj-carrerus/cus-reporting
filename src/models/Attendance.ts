@@ -14,6 +14,11 @@ const attendanceSchema = new Schema({
   longitude: { type: Number, required: true },
   status: { type: String, enum: ATTENDANCE_STATUSES, required: true },
   distanceFromOffice: { type: Number, required: true },
+  // Set when the employee checks out (from the office, like check-in).
+  checkOutTime: { type: Date },
+  checkOutLatitude: { type: Number },
+  checkOutLongitude: { type: Number },
+  checkOutDistance: { type: Number },
 });
 
 attendanceSchema.index({ userId: 1, checkInTime: -1 });
