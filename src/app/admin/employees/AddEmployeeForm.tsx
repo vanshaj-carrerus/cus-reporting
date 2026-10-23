@@ -6,9 +6,22 @@ import { UserPlus, AlertCircle } from "lucide-react";
 
 const NAME_MAX_LENGTH = 80;
 
-export default function AddEmployeeForm() {
+type Option = { id: string; name: string };
+
+export default function AddEmployeeForm({
+  departments,
+  shifts,
+  breakPlans,
+}: {
+  departments: Option[];
+  shifts: Option[];
+  breakPlans: Option[];
+}) {
+  const [shiftId, setShiftId] = useState("");
+  const [breakPlanId, setBreakPlanId] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [added, setAdded] = useState<{ name: string; email: string } | null>(null);
@@ -34,7 +47,13 @@ export default function AddEmployeeForm() {
       const res = await fetch("/api/employees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: cleaned, email: email.trim() }),
+        body: JSON.stringify({
+          name: cleaned,
+          email: email.trim(),
+          departmentId: departmentId || null,
+          shiftId: shiftId || null,
+          breakPlanId: breakPlanId || null,
+        }),
       });
       // The body may not be JSON if something upstream failed, so don't assume it.
       const data = await res.json().catch(() => ({}));
@@ -47,6 +66,9 @@ export default function AddEmployeeForm() {
       setAdded({ name: data.employee.name, email: data.employee.email });
       setName("");
       setEmail("");
+      setDepartmentId("");
+      setShiftId("");
+      setBreakPlanId("");
       router.refresh();
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
@@ -106,6 +128,60 @@ export default function AddEmployeeForm() {
                 : "border-border focus:border-accent focus:ring-accent/20"
             }`}
           />
+        </div>
+        <div className="min-w-44">
+          <label htmlFor="employee-department" className="mb-1 block text-xs font-medium text-muted">
+            Department
+          </label>
+          <select
+            id="employee-department"
+            value={departmentId}
+            onChange={(e) => setDepartmentId(e.target.value)}
+            className="transition-smooth w-full rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          >
+            <option value="">Unassigned</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-44">
+          <label htmlFor="employee-shift" className="mb-1 block text-xs font-medium text-muted">
+            Shift (IST)
+          </label>
+          <select
+            id="employee-shift"
+            value={shiftId}
+            onChange={(e) => setShiftId(e.target.value)}
+            className="transition-smooth w-full rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          >
+            <option value="">No shift</option>
+            {shifts.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-44">
+          <label htmlFor="employee-breaks" className="mb-1 block text-xs font-medium text-muted">
+            Break plan
+          </label>
+          <select
+            id="employee-breaks"
+            value={breakPlanId}
+            onChange={(e) => setBreakPlanId(e.target.value)}
+            className="transition-smooth w-full rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          >
+            <option value="">No breaks</option>
+            {breakPlans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </div>
         <button
           type="submit"

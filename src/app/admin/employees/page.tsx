@@ -1,6 +1,9 @@
 import { requireAdmin } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
+import { Department, DEPARTMENT_COLLATION } from "@/models/Department";
+import { BreakPlan, BREAK_PLAN_COLLATION } from "@/models/BreakPlan";
 import { Employee } from "@/models/Employee";
+import { Shift } from "@/models/Shift";
 import AddEmployeeForm from "./AddEmployeeForm";
 import EmployeeRow from "./EmployeeRow";
 import { Users } from "lucide-react";
@@ -10,7 +13,21 @@ export const dynamic = "force-dynamic";
 export default async function AdminEmployeesPage() {
   await requireAdmin();
   await connectToDatabase();
-  const employees = await Employee.find().sort({ name: 1 }).lean();
+  const [employees, departments, shifts, plans] = await Promise.all([
+    Employee.find().sort({ name: 1 }).lean(),
+    Department.find().sort({ name: 1 }).collation(DEPARTMENT_COLLATION).lean(),
+    Shift.find().sort({ startTime: 1, name: 1 }).lean(),
+    BreakPlan.find().sort({ name: 1 }).collation(BREAK_PLAN_COLLATION).lean(),
+  ]);
+  const departmentOptions = departments.map((d) => ({
+    id: d._id.toString(),
+    name: d.name,
+  }));
+  const shiftOptions = shifts.map((s) => ({
+    id: s._id.toString(),
+    name: `${s.name} (${s.startTime}–${s.endTime})`,
+  }));
+  const planOptions = plans.map((p) => ({ id: p._id.toString(), name: p.name }));
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -22,7 +39,11 @@ export default async function AdminEmployeesPage() {
       </div>
 
       <div className="animate-fade-in-up" style={{ animationDelay: "60ms" }}>
-        <AddEmployeeForm />
+        <AddEmployeeForm
+          departments={departmentOptions}
+          shifts={shiftOptions}
+          breakPlans={planOptions}
+        />
       </div>
 
       <div
@@ -57,6 +78,12 @@ export default async function AdminEmployeesPage() {
                 id={employee._id.toString()}
                 name={employee.name}
                 email={employee.email ?? null}
+                departmentId={employee.department?.toString() ?? null}
+                departments={departmentOptions}
+                shiftId={employee.shift?.toString() ?? null}
+                shifts={shiftOptions}
+                breakPlanId={employee.breakPlan?.toString() ?? null}
+                breakPlans={planOptions}
                 passwordSet={Boolean(employee.passwordSetAt)}
                 delay={i * 30}
               />

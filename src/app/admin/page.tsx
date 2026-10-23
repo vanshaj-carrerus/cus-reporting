@@ -1,16 +1,19 @@
 import { requireAdmin } from "@/lib/adminAuth";
+import { attendanceDayFilter } from "@/lib/attendanceDay";
+import { getLivePresence } from "@/lib/livePresence";
 import { connectToDatabase } from "@/lib/mongodb";
 import {
   formatIstDate,
   formatIstTime,
   istDateKey,
-  istDayRange,
   parseDateKey,
 } from "@/lib/time";
 import { Attendance, type AttendanceStatus } from "@/models/Attendance";
-import "@/models/Employee"; // registers the Employee model for populate()
+import LivePresencePanel from "./LivePresencePanel";
+import { Department, DEPARTMENT_COLLATION } from "@/models/Department";
+import { Employee } from "@/models/Employee";
 import type { EmployeeDoc } from "@/models/Employee";
-import type { Types } from "mongoose";
+import { Types } from "mongoose";
 import {
   CalendarDays,
   CheckCircle2,
@@ -36,33 +39,75 @@ const STATUS_LABELS: Record<AttendanceStatus, string> = {
 
 interface PopulatedAttendance {
   _id: Types.ObjectId;
-  userId: (EmployeeDoc & { _id: Types.ObjectId }) | null;
+  userId:
+    | (Omit<EmployeeDoc, "department"> & {
+        _id: Types.ObjectId;
+        department?: { _id: Types.ObjectId; name: string } | null;
+      })
+    | null;
   checkInTime: Date;
   latitude: number;
   longitude: number;
   status: AttendanceStatus;
   distanceFromOffice: number;
+  shiftName?: string;
+  outsideMinutes?: number;
+  breakOverrunMinutes?: number;
 }
 
 export default async function AdminDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; department?: string }>;
 }) {
   await requireAdmin();
-  const { date } = await searchParams;
+  const { date, department } = await searchParams;
   // The selected day is an IST calendar day; junk or missing input means today (IST).
   const dateInputValue = (date && parseDateKey(date)) || istDateKey();
-  const { start, end } = istDayRange(dateInputValue);
 
   await connectToDatabase();
 
-  const records = (await Attendance.find({
-    checkInTime: { $gte: start, $lt: end },
-  })
-    .populate("userId")
+  const departments = await Department.find()
+    .sort({ name: 1 })
+    .collation(DEPARTMENT_COLLATION)
+    .lean();
+
+  // "all" (default) shows everyone; "none" is employees without a department;
+  // otherwise it must be the id of an existing department.
+  const departmentFilter =
+    department === "none" ||
+    (department && departments.some((d) => d._id.toString() === department))
+      ? department
+      : "all";
+
+  // An attendance "day" is the day its shift started (so night shifts stay whole).
+  const filter: Record<string, unknown> = { ...attendanceDayFilter(dateInputValue) };
+  if (departmentFilter !== "all") {
+    const members = await Employee.find({
+      department: departmentFilter === "none" ? null : departmentFilter,
+    }).distinct("_id");
+    filter.userId = { $in: members };
+  }
+
+  const records = (await Attendance.find(filter)
+    .populate({ path: "userId", populate: { path: "department", select: "name" } })
     .sort({ checkInTime: -1 })
     .lean()) as unknown as PopulatedAttendance[];
+
+  const departmentLabel =
+    departmentFilter === "none"
+      ? "Unassigned"
+      : (departments.find((d) => d._id.toString() === departmentFilter)?.name ?? "");
+
+  // Live presence (who is outside the office right now), narrowed to the chosen department.
+  const liveRows = (await getLivePresence()).filter((r) =>
+    departmentFilter === "all"
+      ? true
+      : departmentFilter === "none"
+        ? r.department === null
+        : r.department === departmentLabel
+  );
+  const liveAt = new Date().toISOString();
 
   const stats = [
     {
@@ -92,15 +137,30 @@ export default async function AdminDashboardPage({
   ];
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
+    <main className="mx-auto max-w-6xl px-6 py-10">
       <div className="animate-fade-in-up mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Attendance Dashboard</h1>
           <p className="text-sm text-muted">
             {formatIstDate(dateInputValue)} · IST
+            {departmentFilter !== "all" && ` · ${departmentLabel}`}
           </p>
         </div>
-        <form method="GET" className="flex items-center gap-2">
+        <form method="GET" className="flex flex-wrap items-center gap-2">
+          <select
+            name="department"
+            defaultValue={departmentFilter}
+            aria-label="Filter by department"
+            className="transition-smooth rounded-xl border border-border bg-surface-2 px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
+          >
+            <option value="all">All departments</option>
+            {departments.map((d) => (
+              <option key={d._id.toString()} value={d._id.toString()}>
+                {d.name}
+              </option>
+            ))}
+            <option value="none">Unassigned</option>
+          </select>
           <input
             type="date"
             name="date"
@@ -115,6 +175,8 @@ export default async function AdminDashboardPage({
           </button>
         </form>
       </div>
+
+      <LivePresencePanel initialRows={liveRows} initialAt={liveAt} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((stat, i) => (
@@ -142,6 +204,12 @@ export default async function AdminDashboardPage({
                 Employee
               </th>
               <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
+                Department
+              </th>
+              <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
+                Shift
+              </th>
+              <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
                 Check-In Time
               </th>
               <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
@@ -151,6 +219,9 @@ export default async function AdminDashboardPage({
                 Distance
               </th>
               <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
+                Away (not on break)
+              </th>
+              <th className="px-4 py-3 text-left font-mono text-[11px] font-medium uppercase tracking-wider text-muted">
                 Status
               </th>
             </tr>
@@ -158,8 +229,8 @@ export default async function AdminDashboardPage({
           <tbody className="divide-y divide-border">
             {records.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted">
-                  No check-ins for this date.
+                <td colSpan={8} className="px-4 py-10 text-center text-muted">
+                  No check-ins for this date{departmentFilter !== "all" ? " in this department" : ""}.
                 </td>
               </tr>
             )}
@@ -178,6 +249,10 @@ export default async function AdminDashboardPage({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-muted">
+                    {record.userId?.department?.name ?? "Unassigned"}
+                  </td>
+                  <td className="px-4 py-3 text-muted">{record.shiftName ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted">
                     {formatIstTime(record.checkInTime)}
                   </td>
                   <td className="px-4 py-3">
@@ -194,6 +269,14 @@ export default async function AdminDashboardPage({
                   </td>
                   <td className="px-4 py-3 text-muted">
                     {Math.round(record.distanceFromOffice)}m
+                  </td>
+                  <td className="px-4 py-3 text-muted">
+                    {Math.round(record.outsideMinutes ?? 0)} min
+                    {(record.breakOverrunMinutes ?? 0) >= 1 && (
+                      <span className="block text-xs text-danger">
+                        {Math.round(record.breakOverrunMinutes ?? 0)} min after break
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span

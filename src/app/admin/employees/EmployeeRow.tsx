@@ -27,12 +27,24 @@ export default function EmployeeRow({
   id,
   name,
   email,
+  departmentId,
+  departments,
+  shiftId,
+  shifts,
+  breakPlanId,
+  breakPlans,
   passwordSet,
   delay,
 }: {
+  shiftId: string | null;
+  shifts: { id: string; name: string }[];
+  breakPlanId: string | null;
+  breakPlans: { id: string; name: string }[];
   id: string;
   name: string;
   email: string | null;
+  departmentId: string | null;
+  departments: { id: string; name: string }[];
   passwordSet: boolean;
   delay: number;
 }) {
@@ -40,11 +52,15 @@ export default function EmployeeRow({
   const [confirming, setConfirming] = useState(false);
   const [value, setValue] = useState(name);
   const [emailValue, setEmailValue] = useState(email ?? "");
+  const [departmentValue, setDepartmentValue] = useState(departmentId ?? "");
+  const [shiftValue, setShiftValue] = useState(shiftId ?? "");
+  const [planValue, setPlanValue] = useState(breakPlanId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const state = accountState(email, passwordSet);
+  const departmentName = departments.find((d) => d.id === departmentId)?.name;
 
   /** Returns true on success, or false after showing the error. */
   async function request(method: "PATCH" | "DELETE", body?: object): Promise<boolean> {
@@ -83,10 +99,25 @@ export default function EmployeeRow({
       setError("Email can't be empty — it's what they sign in with.");
       return;
     }
-    const changes: { name?: string; email?: string } = {};
+    const changes: {
+      name?: string;
+      email?: string;
+      departmentId?: string | null;
+      shiftId?: string | null;
+      breakPlanId?: string | null;
+    } = {};
+    if (shiftValue !== (shiftId ?? "")) changes.shiftId = shiftValue || null;
+    if (planValue !== (breakPlanId ?? "")) changes.breakPlanId = planValue || null;
     if (cleaned !== name) changes.name = cleaned;
     if (cleanedEmail.toLowerCase() !== (email ?? "")) changes.email = cleanedEmail;
-    if (!changes.name && !changes.email) {
+    if (departmentValue !== (departmentId ?? "")) changes.departmentId = departmentValue || null;
+    if (
+      !changes.name &&
+      !changes.email &&
+      changes.departmentId === undefined &&
+      changes.shiftId === undefined &&
+      changes.breakPlanId === undefined
+    ) {
       setEditing(false);
       return;
     }
@@ -97,6 +128,9 @@ export default function EmployeeRow({
     setEditing(false);
     setValue(name);
     setEmailValue(email ?? "");
+    setDepartmentValue(departmentId ?? "");
+    setShiftValue(shiftId ?? "");
+    setPlanValue(breakPlanId ?? "");
     setError(null);
   }
 
@@ -149,12 +183,65 @@ export default function EmployeeRow({
                 }}
                 className={inputClass}
               />
+              <select
+                value={departmentValue}
+                aria-label={`Department for ${name}`}
+                onChange={(e) => {
+                  setDepartmentValue(e.target.value);
+                  setError(null);
+                }}
+                className={inputClass}
+              >
+                <option value="">Unassigned</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={shiftValue}
+                aria-label={`Shift for ${name}`}
+                onChange={(e) => {
+                  setShiftValue(e.target.value);
+                  setError(null);
+                }}
+                className={inputClass}
+              >
+                <option value="">No shift</option>
+                {shifts.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={planValue}
+                aria-label={`Break plan for ${name}`}
+                onChange={(e) => {
+                  setPlanValue(e.target.value);
+                  setError(null);
+                }}
+                className={inputClass}
+              >
+                <option value="">No breaks</option>
+                {breakPlans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </div>
           ) : (
             <div className="min-w-0">
               <div className="font-medium">{name}</div>
               <div className="truncate text-xs text-muted">
                 {email ?? "Add an email so they can sign in"}
+              </div>
+              <div className="text-xs text-muted">{departmentName ?? "Unassigned"}</div>
+              <div className="text-xs text-muted">
+                {shifts.find((s) => s.id === shiftId)?.name ?? "No shift"} ·{" "}
+                {breakPlans.find((p) => p.id === breakPlanId)?.name ?? "No breaks"}
               </div>
               <div className={`text-xs font-medium ${state.className}`}>{state.label}</div>
             </div>
@@ -218,6 +305,9 @@ export default function EmployeeRow({
                 onClick={() => {
                   setValue(name);
                   setEmailValue(email ?? "");
+                  setDepartmentValue(departmentId ?? "");
+                  setShiftValue(shiftId ?? "");
+                  setPlanValue(breakPlanId ?? "");
                   setEditing(true);
                 }}
                 className={`${iconBtn} hover:text-accent-text`}

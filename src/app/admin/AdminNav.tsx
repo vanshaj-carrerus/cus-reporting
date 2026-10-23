@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, QrCode } from "lucide-react";
+import { LayoutDashboard, Users, Building2, Clock, Coffee, QrCode } from "lucide-react";
 
 const TABS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/employees", label: "Employees", icon: Users },
+  { href: "/admin/departments", label: "Departments", icon: Building2 },
+  { href: "/admin/shifts", label: "Shifts", icon: Clock },
+  { href: "/admin/breaks", label: "Breaks", icon: Coffee },
   { href: "/qr", label: "QR Code", icon: QrCode },
 ];
 

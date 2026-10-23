@@ -52,7 +52,9 @@ export async function POST(request: NextRequest) {
 
   try {
     await connectToDatabase();
-    const employee = await Employee.findOne({ email }).select("+passwordHash");
+    const employee = await Employee.findOne({ email })
+      .select("+passwordHash")
+      .populate("department", "name");
 
     if (employee && !employee.passwordHash) {
       return NextResponse.json(

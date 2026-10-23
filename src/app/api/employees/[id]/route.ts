@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { adminApiGuard } from "@/lib/adminAuth";
 import { normalizeEmail } from "@/lib/email";
+import { resolveScheduleAssignment } from "@/lib/assignments";
+import { resolveDepartmentId } from "@/lib/departments";
 import { employeeForAdmin } from "@/lib/employeeView";
 import { isDuplicateKeyError, isDuplicateOn } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
+import "@/models/Department"; // registers the Department model for populate()
+import "@/models/Shift"; // registers the Shift model for populate()
+import "@/models/BreakPlan"; // registers the BreakPlan model for populate()
 import {
   Employee,
   EMPLOYEE_NAME_MAX_LENGTH,
@@ -16,7 +21,8 @@ const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// PATCH /api/employees/:id — change an employee's name and/or email. Send only
+// PATCH /api/employees/:id — change an employee's name, email and/or department
+// (departmentId: an id, or null to unassign). Send only
 // the fields to change. Changing the email changes what they sign in with, so
 // the new address has to be verified again: the employee's password and any
 // sessions are cleared, and they set a new password with a code emailed to it.
@@ -29,7 +35,13 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Invalid employee id." }, { status: 400 });
   }
 
-  let body: { name?: unknown; email?: unknown };
+  let body: {
+    name?: unknown;
+    email?: unknown;
+    departmentId?: unknown;
+    shiftId?: unknown;
+    breakPlanId?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -69,9 +81,15 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     changes.email = email;
   }
 
-  if (changes.name === undefined && changes.email === undefined) {
+  if (
+    changes.name === undefined &&
+    changes.email === undefined &&
+    body.departmentId === undefined &&
+    body.shiftId === undefined &&
+    body.breakPlanId === undefined
+  ) {
     return NextResponse.json(
-      { error: "Send a name and/or email to update." },
+      { error: "Send a name, email, department, shift and/or break plan to update." },
       { status: 400 }
     );
   }
@@ -90,6 +108,16 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   try {
     await connectToDatabase();
 
+    const department = await resolveDepartmentId(body.departmentId);
+    if ("error" in department) return department.error;
+
+    const existing = await Employee.findById(id).select("email shift breakPlan");
+    if (!existing) {
+      return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+    }
+    const schedule = await resolveScheduleAssignment(body, existing);
+    if ("error" in schedule) return schedule.error;
+
     if (changes.name !== undefined) {
       const clash = await Employee.findOne({
         name: changes.name,
@@ -105,30 +133,36 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
       if (clash) return duplicateEmail();
     }
 
-    const existing = await Employee.findById(id).select("email");
-    if (!existing) {
-      return NextResponse.json({ error: "Employee not found." }, { status: 404 });
-    }
-
     const emailChanged = changes.email !== undefined && changes.email !== existing.email;
-    const update = emailChanged
+    const unset: Record<string, 1> = emailChanged
       ? {
-          ...changes,
-          $unset: {
-            passwordHash: 1,
-            passwordSetAt: 1,
-            verifyCodeHash: 1,
-            verifyCodeExpiresAt: 1,
-            verifyCodeSentAt: 1,
-            verifyCodeAttempts: 1,
-          },
+          passwordHash: 1,
+          passwordSetAt: 1,
+          verifyCodeHash: 1,
+          verifyCodeExpiresAt: 1,
+          verifyCodeSentAt: 1,
+          verifyCodeAttempts: 1,
         }
-      : changes;
+      : {};
+    const set: Record<string, unknown> = { ...changes };
+    if (department.id) set.department = department.id;
+    else if (department.id === null) unset.department = 1;
+    if (schedule.shift) set.shift = schedule.shift;
+    else if (schedule.shift === null) unset.shift = 1;
+    if (schedule.breakPlan) set.breakPlan = schedule.breakPlan;
+    else if (schedule.breakPlan === null) unset.breakPlan = 1;
 
-    const employee = await Employee.findByIdAndUpdate(id, update, {
-      new: true,
-      runValidators: true,
-    });
+    const employee = await Employee.findByIdAndUpdate(
+      id,
+      {
+        ...(Object.keys(set).length ? { $set: set } : {}),
+        ...(Object.keys(unset).length ? { $unset: unset } : {}),
+      },
+      { new: true, runValidators: true }
+    )
+      .populate("department", "name")
+      .populate("shift", "name startTime endTime")
+      .populate("breakPlan", "name");
     if (!employee) {
       return NextResponse.json({ error: "Employee not found." }, { status: 404 });
     }

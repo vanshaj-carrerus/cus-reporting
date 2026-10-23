@@ -39,6 +39,11 @@ export const config = {
     "/admin/:path*",
     "/api/admin/:path*",
     "/api/employees/:path*",
+    "/api/departments/:path*",
+    "/api/shifts/:path*",
+    "/api/break-plans/:path*",
+    "/api/shift-settings/:path*",
+    "/api/presence/live",
     "/api/attendance/:path*",
   ],
 };

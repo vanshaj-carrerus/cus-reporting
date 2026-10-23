@@ -8,6 +8,7 @@ import {
   createEmployeeToken,
   verifyEmployeeToken,
 } from "./employeeSession";
+import "@/models/Department"; // registers the Department model for populate()
 import { Employee } from "@/models/Employee";
 
 export const SIGN_IN_REQUIRED = "Please sign in to continue.";
@@ -18,7 +19,11 @@ type EmployeeRecord = {
   _id: Types.ObjectId;
   name: string;
   email?: string | null;
+  // Populated (name only) wherever the profile is sent to the app.
+  department?: Types.ObjectId | { name: string } | null;
   passwordSetAt?: Date | null;
+  shift?: Types.ObjectId | null;
+  breakPlan?: Types.ObjectId | null;
 };
 
 /**
@@ -42,7 +47,7 @@ export async function requireEmployee(
   if (!token || !Types.ObjectId.isValid(token.id)) return denied();
 
   await connectToDatabase();
-  const employee = await Employee.findById(token.id);
+  const employee = await Employee.findById(token.id).populate("department", "name");
   if (!employee) return denied();
 
   // A session only counts if it began after the current password was set. An
@@ -67,5 +72,7 @@ export function employeeProfile(employee: EmployeeRecord) {
     id: employee._id.toString(),
     name: employee.name,
     email: employee.email ?? null,
+    department:
+      employee.department && "name" in employee.department ? employee.department.name : null,
   };
 }

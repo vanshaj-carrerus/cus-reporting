@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
         },
       },
       { new: true }
-    );
+    ).populate("department", "name");
     if (!updated) return fail(NO_CODE, 400);
 
     perEmailLimiter.clear(emailKey);

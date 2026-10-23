@@ -55,11 +55,23 @@ on `/admin`.
   an employee id with no sign-in, which the API now rejects.
 - **Admin dashboard**: `/admin` — lists the day's check-ins, color-coded by
   status, with a Google Maps link on each set of coordinates for auditing
-  flagged (Out of Location) entries. Use the date picker to view other days.
+  flagged (Out of Location) entries. Use the date picker to view other days, and
+  the department dropdown to show a single department (or "Unassigned").
+- **Departments**: `/admin/departments` — create, rename and delete departments.
+  Assign each employee to one when adding them or by editing them on
+  `/admin/employees`. Deleting a department leaves its employees unassigned; no
+  attendance is removed. Employees that existed before departments have none until
+  you assign one.
+
+- **Shifts** (`/admin/shifts`): day or night shifts in IST (`HH:mm`; a shift that ends at or before its start runs past midnight). A check-in belongs to the IST date its shift *started* (`shiftDate`), so a night shift checked in after midnight still counts for the evening it began. "Late" is measured against the shift start + the shift's grace minutes; employees with no shift keep the old `SHIFT_CUTOFF_*` rule. Check-in opens `earlyCheckInMinutes` (default 120) before the shift.
+- **Breaks** (`/admin/breaks`): a *break plan* is a list of fixed IST windows (several allowed, no overlaps, each must fall inside the employee's shift). Assign a shift and a break plan per employee on `/admin/employees`, or to a whole department with the clock button on `/admin/departments`. Employees can't start or end a break.
+- **Outside the office**: while checked in, the app reports its location (`POST /api/presence`). The dashboard's **Outside right now** panel (refreshes every 30 s) shows who is *Outside* (not on a break), *On break*, *Break over - still outside*, or *No signal*. The rules live in one function, `classifyPresence` in `src/lib/shifts.ts` (tests: `npx tsx scripts/test-shifts.ts`). Rules for all shifts (alarm repeat interval, rings before it can be silenced, no-signal threshold, early check-in window) are on the Shifts page.
 
 ## Data model
 
-- **Employee** (`src/models/Employee.ts`): `name` (unique, case-insensitive), `email` (unique, lowercase; the login), `passwordHash` (scrypt, never returned by the API), `passwordSetAt` (unset = invited, not yet active), `verifyCodeHash` / `verifyCodeExpiresAt` / `verifyCodeSentAt` / `verifyCodeAttempts` (emailed code: hashed, 10 min, 5 guesses, cleared once used), `createdAt`
+- **Employee** (`src/models/Employee.ts`): `name` (unique, case-insensitive), `email` (unique, lowercase; the login), `passwordHash` (scrypt, never returned by the API), `passwordSetAt` (unset = invited, not yet active), `verifyCodeHash` / `verifyCodeExpiresAt` / `verifyCodeSentAt` / `verifyCodeAttempts` (emailed code: hashed, 10 min, 5 guesses, cleared once used), `department` (optional ref → Department), `createdAt`
+- **Department** (`src/models/Department.ts`): `name` (unique, case-insensitive), `createdAt`
+- **Shift** (`src/models/Shift.ts`): `name`, `startTime`, `endTime` (IST HH:mm), `lateGraceMinutes`. **BreakPlan** (`src/models/BreakPlan.ts`): `name`, `breaks[{ name, startTime, endTime }]`. **ShiftSettings**: one document of shared rules. Employees reference one `shift` and one `breakPlan`; attendance freezes `shiftDate/shiftName/shiftStart/shiftEnd` at check-in and tracks `lastSeenAt`, `outsideSince`, `outsideMinutes`, `breakOverrunMinutes`.
 - **Attendance** (`src/models/Attendance.ts`): `userId` (ref → Employee), `checkInTime`, `latitude`, `longitude`, `status` (`ON_TIME` / `LATE` / `OUT_OF_LOCATION`), `distanceFromOffice`, and once checked out `checkOutTime`, `checkOutLatitude`, `checkOutLongitude`, `checkOutDistance`
 
 Browse the raw data with a MongoDB GUI (MongoDB Compass, or Atlas's own UI
@@ -84,10 +96,13 @@ if you're hosting there).
   and `409` if the employee already checked in today.
 - `POST /api/check-out` — same auth and body. Returns `200`, `403` if outside
   the geo-fence, `409` (`NOT_CHECKED_IN` / `ALREADY_CHECKED_OUT`).
-- `POST /api/employees` — admin. Body `{ name, email }`; `PATCH /api/employees/:id`
-  accepts `name` and/or `email`. Changing an email clears that employee's password and sessions, so the new address is verified by a fresh emailed code.
-- `GET /api/attendance?date=YYYY-MM-DD` — attendance records for a day
-  (defaults to today).
+- `GET|POST /api/departments`, `PATCH|DELETE /api/departments/:id` — admin. Body `{ name }`.
+- `POST /api/employees` — admin. Body `{ name, email, departmentId? }`; `PATCH /api/employees/:id`
+  accepts `name`, `email` and/or `departmentId` (`null` unassigns). Changing an email clears that employee's password and sessions, so the new address is verified by a fresh emailed code.
+- `GET|POST /api/shifts`, `PATCH|DELETE /api/shifts/:id`, `GET|POST /api/break-plans`, `PATCH|DELETE /api/break-plans/:id`, `GET|PATCH /api/shift-settings`, `POST /api/departments/:id/assign` (shift/break plan for a whole department), `GET /api/presence/live` — admin.
+- `POST /api/presence` — employee session; body `{ latitude, longitude }`. `GET /api/auth/me` also returns `schedule` (shift, today's break windows, office area, alarm rules).
+- `GET /api/attendance?date=YYYY-MM-DD&department=<id|none>` — attendance records for a day
+  (defaults to today), optionally for one department only (`none` = unassigned).
 
 ## Notes
 

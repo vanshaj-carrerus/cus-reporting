@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
 import { adminApiGuard } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
-import { istDateKey, istDayRange, parseDateKey } from "@/lib/time";
+import { attendanceDayFilter } from "@/lib/attendanceDay";
+import { istDateKey, parseDateKey } from "@/lib/time";
 import { Attendance } from "@/models/Attendance";
-import "@/models/Employee"; // registers the Employee model for populate()
+import "@/models/Department"; // registers the Department model for populate()
+import { Employee } from "@/models/Employee";
 
-// GET /api/attendance?date=YYYY-MM-DD — defaults to today.
+// GET /api/attendance?date=YYYY-MM-DD&department=<id|none> — date defaults to
+// today; department is optional ("none" = employees with no department).
 async function handleGet(request: NextRequest) {
   const dateParam = request.nextUrl.searchParams.get("date");
   const dateKey = dateParam ? parseDateKey(dateParam) : istDateKey();
@@ -17,12 +21,23 @@ async function handleGet(request: NextRequest) {
     );
   }
 
+  const department = request.nextUrl.searchParams.get("department");
+  if (department && department !== "none" && !Types.ObjectId.isValid(department)) {
+    return NextResponse.json({ error: "Invalid department parameter." }, { status: 400 });
+  }
+
   await connectToDatabase();
 
-  const records = await Attendance.find({
-    checkInTime: { $gte: istDayRange(dateKey).start, $lt: istDayRange(dateKey).end },
-  })
-    .populate("userId")
+  const filter: Record<string, unknown> = { ...attendanceDayFilter(dateKey) };
+  if (department) {
+    const members = await Employee.find({
+      department: department === "none" ? null : department,
+    }).distinct("_id");
+    filter.userId = { $in: members };
+  }
+
+  const records = await Attendance.find(filter)
+    .populate({ path: "userId", populate: { path: "department", select: "name" } })
     .sort({ checkInTime: -1 });
 
   return NextResponse.json({ records });

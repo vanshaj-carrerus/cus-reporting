@@ -3,6 +3,12 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Attendance } from "@/models/Attendance";
 import { requireEmployee } from "@/lib/employeeAuth";
 import { istDateKey, istDayRange, istTimeOfDay } from "@/lib/time";
+import {
+  checkInInstance,
+  getShiftSettings,
+  loadEmployeeSchedule,
+} from "@/lib/employeeSchedule";
+import { isLateForShift } from "@/lib/shifts";
 import { haversineDistanceMeters, isValidCoordinate } from "@/lib/geo";
 import {
   OFFICE_LOCATION,
@@ -50,12 +56,29 @@ async function handleCheckIn(request: NextRequest) {
 
   const now = new Date();
 
-  const today = istDayRange(istDateKey(now));
+  // With a shift, the "day" is the shift instance (a night shift spans midnight).
+  // Without one, it's the IST calendar day, as before shifts existed.
+  const { shift } = await loadEmployeeSchedule(auth.employee);
+  const instance = shift
+    ? checkInInstance(shift, now, await getShiftSettings())
+    : null;
 
-  const todaysRecords = await Attendance.find({
-    userId,
-    checkInTime: { $gte: today.start, $lt: today.end },
-  }).sort({ checkInTime: -1 });
+  if (shift && !instance) {
+    return NextResponse.json(
+      {
+        error: `Your ${shift.name} shift (${shift.startTime}–${shift.endTime} IST) isn't open for check-in right now.`,
+        code: "SHIFT_CLOSED",
+      },
+      { status: 422 }
+    );
+  }
+
+  const today = istDayRange(istDateKey(now));
+  const todaysRecords = await Attendance.find(
+    instance
+      ? { userId, shiftDate: instance.dateKey }
+      : { userId, checkInTime: { $gte: today.start, $lt: today.end } }
+  ).sort({ checkInTime: -1 });
 
   // Only an accepted check-in counts as "already checked in". A rejected
   // (out-of-location) attempt must not block a retry from the office.
@@ -84,7 +107,9 @@ async function handleCheckIn(request: NextRequest) {
 
   const status = !atOffice
     ? "OUT_OF_LOCATION"
-    : isLateArrival(now)
+    : (instance && shift
+          ? isLateForShift(instance, shift.lateGraceMinutes, now)
+          : isLateArrival(now))
       ? "LATE"
       : "ON_TIME";
 
@@ -96,6 +121,14 @@ async function handleCheckIn(request: NextRequest) {
     longitude,
     status,
     distanceFromOffice: distance,
+    ...(instance && shift
+      ? {
+          shiftDate: instance.dateKey,
+          shiftName: shift.name,
+          shiftStart: instance.start,
+          shiftEnd: instance.end,
+        }
+      : {}),
   };
   let attendance;
   if (rejected) {

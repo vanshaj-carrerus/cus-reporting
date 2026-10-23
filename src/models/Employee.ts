@@ -19,6 +19,13 @@ const employeeSchema = new Schema(
     // The employee's login. Always stored normalized (see lib/email.ts). Optional
     // only because employees created before accounts existed have none yet.
     email: { type: String, trim: true, lowercase: true },
+    // The employee's department. Optional: employees created before departments
+    // existed (or whose department was deleted) are simply "Unassigned".
+    department: { type: Schema.Types.ObjectId, ref: "Department" },
+    // Working hours (day/night, IST) and the fixed break windows within them.
+    // Both optional: with no shift the old single late-cutoff rule still applies.
+    shift: { type: Schema.Types.ObjectId, ref: "Shift" },
+    breakPlan: { type: Schema.Types.ObjectId, ref: "BreakPlan" },
     // scrypt hash (see lib/password.ts). Never returned unless asked for with
     // .select("+passwordHash"). Unset until the employee sets their password.
     passwordHash: { type: String, select: false },
