@@ -22,8 +22,8 @@ on `/admin`.
    | Variable | Purpose |
    | --- | --- |
    | `MONGODB_URI` | MongoDB connection string (local or Atlas) |
-   | `OFFICE_LATITUDE` / `OFFICE_LONGITUDE` | Office coordinates for geo-fencing |
-   | `OFFICE_RADIUS_METERS` | Allowed radius in meters (default 70) |
+   | `OFFICE_LATITUDE` / `OFFICE_LONGITUDE` | Fallback office coordinates, used only until an office is added on `/admin/offices` |
+   | `OFFICE_RADIUS_METERS` | Fallback radius in meters (default 70) |
    | `SHIFT_CUTOFF_HOUR` / `SHIFT_CUTOFF_MINUTE` | Shift start cutoff for "Late" status (default 09:15) |
    | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM` | SMTP account (nodemailer) that emails employees their verification code. For Gmail you can instead set just `EMAIL_USER` + `EMAIL_PASS` (an app password). Without email configured, setting or resetting a password is unavailable. Set these on Vercel too. |
 
@@ -63,6 +63,8 @@ on `/admin`.
   you assign one.
 
 - **Shifts** (`/admin/shifts`): day or night shifts in IST (`HH:mm`; a shift that ends at or before its start runs past midnight). A check-in belongs to the IST date its shift *started* (`shiftDate`), so a night shift checked in after midnight still counts for the evening it began. "Late" is measured against the shift start + the shift's grace minutes; employees with no shift keep the old `SHIFT_CUTOFF_*` rule. Check-in opens `earlyCheckInMinutes` (default 120) before the shift.
+- **Live location & alerts**: while an employee is outside every office area, the **Outside right now** panel shows their last reported position (Google Maps link) and a **Send alert** button that pushes a message to their phone. Positions are kept only while outside and cleared when they return. Alerts need the app registered for push (`POST /api/push-token`), which requires an EAS project id in the app config.
+- **Offices** (`/admin/offices`): the places employees can check in, check out and be tracked from — each a name, latitude, longitude and radius (meters). Inside any one of them is allowed; anywhere else is rejected. "Use my location" fills the coordinates from the browser.
 - **Breaks** (`/admin/breaks`): a *break plan* is a list of fixed IST windows (several allowed, any times, overlaps allowed). Assign a shift and a break plan per employee on `/admin/employees`, or to a whole department with the clock button on `/admin/departments`. Employees can't start or end a break.
 - **Outside the office**: while checked in, the app reports its location (`POST /api/presence`). The dashboard's **Outside right now** panel (refreshes every 30 s) shows who is *Outside* (not on a break), *On break*, *Break over - still outside*, or *No signal*. The rules live in one function, `classifyPresence` in `src/lib/shifts.ts` (tests: `npx tsx scripts/test-shifts.ts`). Rules for all shifts (alarm repeat interval, rings before it can be silenced, no-signal threshold, early check-in window) are on the Shifts page.
 

@@ -2,7 +2,7 @@ import type { Types } from "mongoose";
 import { BreakPlan } from "@/models/BreakPlan";
 import { Shift } from "@/models/Shift";
 import { ShiftSettings, SHIFT_SETTINGS_DEFAULTS } from "@/models/ShiftSettings";
-import { OFFICE_LOCATION, OFFICE_RADIUS_METERS } from "./config";
+import type { OfficeArea } from "./offices";
 import {
   resolveBreaks,
   resolveShiftInstance,
@@ -102,8 +102,15 @@ export function scheduleForApp(
   shift: LoadedShift | null,
   plan: LoadedPlan | null,
   instance: ShiftInstance | null,
-  settings: ShiftSettingsValues
+  settings: ShiftSettingsValues,
+  offices: OfficeArea[]
 ) {
+  const areas = offices.map((o) => ({
+    name: o.name,
+    latitude: o.latitude,
+    longitude: o.longitude,
+    radius: o.radius,
+  }));
   return {
     shift: shift
       ? {
@@ -119,11 +126,9 @@ export function scheduleForApp(
       start: b.start.toISOString(),
       end: b.end.toISOString(),
     })),
-    office: {
-      latitude: OFFICE_LOCATION.latitude,
-      longitude: OFFICE_LOCATION.longitude,
-      radius: OFFICE_RADIUS_METERS,
-    },
+    // Every allowed place; `office` (the first) is kept for app builds that predate several.
+    offices: areas,
+    office: areas[0],
     alarm: {
       intervalMinutes: settings.alarmIntervalMinutes,
       ringsBeforeSilence: settings.ringsBeforeSilence,

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findTodaysCheckIn } from "@/lib/attendance";
-import { OFFICE_LOCATION, OFFICE_RADIUS_METERS } from "@/lib/config";
 import { requireEmployee } from "@/lib/employeeAuth";
 import {
   breaksFor,
@@ -8,7 +7,8 @@ import {
   instanceOfAttendance,
   loadEmployeeSchedule,
 } from "@/lib/employeeSchedule";
-import { haversineDistanceMeters, isValidCoordinate } from "@/lib/geo";
+import { isValidCoordinate } from "@/lib/geo";
+import { loadOffices, matchOffice } from "@/lib/offices";
 import { classifyPresence } from "@/lib/shifts";
 import { Attendance } from "@/models/Attendance";
 
@@ -50,13 +50,11 @@ async function handlePresence(request: NextRequest) {
   const instance = instanceOfAttendance(record);
   const breaks = breaksFor(plan, shift, instance);
 
-  const distance = haversineDistanceMeters(
+  const { distance, inside } = matchOffice(
+    await loadOffices(),
     latitude as number,
-    longitude as number,
-    OFFICE_LOCATION.latitude,
-    OFFICE_LOCATION.longitude
+    longitude as number
   );
-  const inside = distance <= OFFICE_RADIUS_METERS;
 
   const wasOutside = record.lastSeenInside === false;
   const outsideSince = inside
@@ -91,6 +89,14 @@ async function handlePresence(request: NextRequest) {
   const $inc: Record<string, number> = {};
   if (outsideSince) $set.outsideSince = outsideSince;
   else $unset.outsideSince = 1;
+  // Keep the position only while outside, so the admin can find them.
+  if (inside) {
+    $unset.lastLatitude = 1;
+    $unset.lastLongitude = 1;
+  } else {
+    $set.lastLatitude = latitude as number;
+    $set.lastLongitude = longitude as number;
+  }
   if (state === "OUTSIDE" || state === "BREAK_OVERRUN") $inc.outsideMinutes = elapsedMinutes;
   if (state === "BREAK_OVERRUN") $inc.breakOverrunMinutes = elapsedMinutes;
 

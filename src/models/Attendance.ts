@@ -30,6 +30,11 @@ const attendanceSchema = new Schema({
   // Live presence, updated by the app's location reports during the shift.
   lastSeenAt: { type: Date },
   lastSeenInside: { type: Boolean },
+  // Where the employee was at the last report while OUTSIDE every office area, so
+  // the admin can find them. Cleared the moment they're back inside — the position
+  // of someone in the office is never kept.
+  lastLatitude: { type: Number },
+  lastLongitude: { type: Number },
   // When the employee left the office area (cleared when they return).
   outsideSince: { type: Date },
   // Total minutes spent outside the office while NOT on a scheduled break.

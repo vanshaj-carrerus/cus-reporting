@@ -19,6 +19,11 @@ export interface LivePresenceRow {
   /** When the break they overstayed ended (BREAK_OVERRUN). */
   overrunSince: string | null;
   lastSeenAt: string | null;
+  /** Last reported position while outside the office areas; null when inside. */
+  latitude: number | null;
+  longitude: number | null;
+  /** The employee's phone is registered to receive an admin alert. */
+  canAlert: boolean;
   outsideMinutes: number;
   breakOverrunMinutes: number;
 }
@@ -39,6 +44,7 @@ export async function getLivePresence(now: Date = new Date()): Promise<LivePrese
   if (open.length === 0) return [];
 
   const employees = await Employee.find({ _id: { $in: open.map((a) => a.userId) } })
+    .select("+pushToken")
     .populate("department", "name")
     .lean();
   const employeeById = new Map(employees.map((e) => [e._id.toString(), e]));
@@ -88,6 +94,9 @@ export async function getLivePresence(now: Date = new Date()): Promise<LivePrese
       outsideSince: a.outsideSince?.toISOString() ?? null,
       overrunSince: overrunSince?.toISOString() ?? null,
       lastSeenAt: a.lastSeenAt?.toISOString() ?? null,
+      latitude: a.lastSeenInside === false ? (a.lastLatitude ?? null) : null,
+      longitude: a.lastSeenInside === false ? (a.lastLongitude ?? null) : null,
+      canAlert: Boolean(employee.pushToken),
       outsideMinutes: Math.round(a.outsideMinutes ?? 0),
       breakOverrunMinutes: Math.round(a.breakOverrunMinutes ?? 0),
     });

@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
     if (!updated) return fail(NO_CODE, 400);
 
     perEmailLimiter.clear(emailKey);
+    await Employee.updateOne({ _id: updated._id }, { $set: { lastActiveAt: new Date() } });
     const response = NextResponse.json({ employee: employeeProfile(updated) });
     startEmployeeSession(response, updated._id.toString());
     return response;

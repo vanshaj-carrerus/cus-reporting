@@ -2,6 +2,8 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { Department, DEPARTMENT_COLLATION } from "@/models/Department";
 import { BreakPlan, BREAK_PLAN_COLLATION } from "@/models/BreakPlan";
+import { getRelease, isOutdated } from "@/lib/appVersion";
+import { agoText, inactiveCutoff, lastActivity } from "@/lib/inactivity";
 import { Employee } from "@/models/Employee";
 import { Shift } from "@/models/Shift";
 import AddEmployeeForm from "./AddEmployeeForm";
@@ -28,6 +30,20 @@ export default async function AdminEmployeesPage() {
     name: `${s.name} (${s.startTime}–${s.endTime})`,
   }));
   const planOptions = plans.map((p) => ({ id: p._id.toString(), name: p.name }));
+
+  const release = await getRelease();
+  const cutoff = inactiveCutoff();
+  const activity = (e: {
+    lastActiveAt?: Date | null;
+    passwordSetAt?: Date | null;
+    createdAt?: Date | null;
+  }) => {
+    const last = lastActivity(e);
+    return {
+      activityLabel: last ? `Last active ${agoText(last)}` : "Never signed in",
+      inactive: (last ?? e.createdAt ?? new Date()) < cutoff,
+    };
+  };
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -85,6 +101,9 @@ export default async function AdminEmployeesPage() {
                 breakPlanId={employee.breakPlan?.toString() ?? null}
                 breakPlans={planOptions}
                 passwordSet={Boolean(employee.passwordSetAt)}
+                {...activity(employee)}
+                appVersion={employee.appVersion ?? null}
+                appOutdated={Boolean(employee.passwordSetAt) && isOutdated(release, employee.appVersion)}
                 delay={i * 30}
               />
             ))}

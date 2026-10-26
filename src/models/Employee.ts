@@ -30,12 +30,22 @@ const employeeSchema = new Schema(
     // .select("+passwordHash"). Unset until the employee sets their password.
     passwordHash: { type: String, select: false },
     passwordSetAt: { type: Date },
+    // Last time the app signed in or opened with a valid session. Lets the admin spot
+    // employees who haven't used the app for days. Unset until their first sign-in.
+    lastActiveAt: { type: Date },
+    // The app version and platform the employee last opened the app with (from the
+    // app's request headers), so the admin can see who is on an old version.
+    appVersion: { type: String },
+    appPlatform: { type: String },
     // Emailed verification code for setting/resetting the password (see
     // lib/verificationCode.ts). Hashed, short-lived, and cleared once used.
     verifyCodeHash: { type: String, select: false },
     verifyCodeExpiresAt: { type: Date, select: false },
     verifyCodeSentAt: { type: Date, select: false },
     verifyCodeAttempts: { type: Number, select: false },
+    // Expo push token of the phone the employee is signed in on, so the admin can
+    // send an alert. Never returned unless asked for with .select("+pushToken").
+    pushToken: { type: String, select: false },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

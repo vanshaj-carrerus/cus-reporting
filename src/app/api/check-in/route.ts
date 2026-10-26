@@ -9,13 +9,9 @@ import {
   loadEmployeeSchedule,
 } from "@/lib/employeeSchedule";
 import { isLateForShift } from "@/lib/shifts";
-import { haversineDistanceMeters, isValidCoordinate } from "@/lib/geo";
-import {
-  OFFICE_LOCATION,
-  OFFICE_RADIUS_METERS,
-  SHIFT_CUTOFF_HOUR,
-  SHIFT_CUTOFF_MINUTE,
-} from "@/lib/config";
+import { isValidCoordinate } from "@/lib/geo";
+import { loadOffices, matchOffice } from "@/lib/offices";
+import { SHIFT_CUTOFF_HOUR, SHIFT_CUTOFF_MINUTE } from "@/lib/config";
 
 interface CheckInBody {
   latitude?: number;
@@ -96,14 +92,10 @@ async function handleCheckIn(request: NextRequest) {
     );
   }
 
-  const distance = haversineDistanceMeters(
-    latitude as number,
-    longitude as number,
-    OFFICE_LOCATION.latitude,
-    OFFICE_LOCATION.longitude
-  );
-
-  const atOffice = distance <= OFFICE_RADIUS_METERS;
+  // Inside any of the admin's office areas counts; otherwise it's measured to the closest one.
+  const match = matchOffice(await loadOffices(), latitude as number, longitude as number);
+  const distance = match.distance;
+  const atOffice = match.inside;
 
   const status = !atOffice
     ? "OUT_OF_LOCATION"
@@ -144,7 +136,8 @@ async function handleCheckIn(request: NextRequest) {
       {
         error: "You are outside the office geo-fence.",
         distanceFromOffice: Math.round(distance),
-        allowedRadius: OFFICE_RADIUS_METERS,
+        allowedRadius: match.office.radius,
+        nearestOffice: match.office.name,
         attendance,
       },
       { status: 403 }

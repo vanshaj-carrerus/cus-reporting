@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     limiter.clear(key);
+    await Employee.updateOne({ _id: employee._id }, { $set: { lastActiveAt: new Date() } });
     const response = NextResponse.json({ employee: employeeProfile(employee) });
     startEmployeeSession(response, employee._id.toString());
     return response;

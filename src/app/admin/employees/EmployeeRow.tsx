@@ -34,8 +34,19 @@ export default function EmployeeRow({
   breakPlanId,
   breakPlans,
   passwordSet,
+  activityLabel,
+  inactive,
+  appVersion,
+  appOutdated,
   delay,
 }: {
+  /** The app version they last opened the app with (null = not reported). */
+  appVersion: string | null;
+  /** Older than the newest version set on the App tab. */
+  appOutdated: boolean;
+  activityLabel: string;
+  /** Hasn't used the app for 2+ days. */
+  inactive: boolean;
   shiftId: string | null;
   shifts: { id: string; name: string }[];
   breakPlanId: string | null;
@@ -244,6 +255,17 @@ export default function EmployeeRow({
                 {breakPlans.find((p) => p.id === breakPlanId)?.name ?? "No breaks"}
               </div>
               <div className={`text-xs font-medium ${state.className}`}>{state.label}</div>
+              {passwordSet && (
+                <div className={`text-xs ${inactive ? "text-warning" : "text-muted"}`}>
+                  {activityLabel}
+                </div>
+              )}
+              {passwordSet && (appVersion || appOutdated) && (
+                <div className={`text-xs ${appOutdated ? "text-warning" : "text-muted"}`}>
+                  {appVersion ? `App v${appVersion}` : "App version unknown"}
+                  {appOutdated && " · update needed"}
+                </div>
+              )}
             </div>
           )}
         </div>

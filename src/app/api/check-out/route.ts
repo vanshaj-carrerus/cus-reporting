@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Attendance } from "@/models/Attendance";
 import { findTodaysCheckIn } from "@/lib/attendance";
-import { OFFICE_LOCATION, OFFICE_RADIUS_METERS } from "@/lib/config";
 import { requireEmployee } from "@/lib/employeeAuth";
-import { haversineDistanceMeters, isValidCoordinate } from "@/lib/geo";
+import { isValidCoordinate } from "@/lib/geo";
+import { loadOffices, matchOffice } from "@/lib/offices";
 
 interface CheckOutBody {
   latitude?: number;
@@ -53,19 +53,19 @@ async function handleCheckOut(request: NextRequest) {
     );
   if (record.checkOutTime) return alreadyOut();
 
-  const distance = haversineDistanceMeters(
+  const { office, distance, inside } = matchOffice(
+    await loadOffices(),
     latitude as number,
-    longitude as number,
-    OFFICE_LOCATION.latitude,
-    OFFICE_LOCATION.longitude
+    longitude as number
   );
 
-  if (distance > OFFICE_RADIUS_METERS) {
+  if (!inside) {
     return NextResponse.json(
       {
         error: "You are outside the office geo-fence.",
         distanceFromOffice: Math.round(distance),
-        allowedRadius: OFFICE_RADIUS_METERS,
+        allowedRadius: office.radius,
+        nearestOffice: office.name,
       },
       { status: 403 }
     );
