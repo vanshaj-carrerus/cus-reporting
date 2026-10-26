@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { adminApiGuard } from "@/lib/adminAuth";
 import { parseBreaks, parsePlanName } from "@/lib/breakPlanInput";
-import { breaksFitShift } from "@/lib/shifts";
 import { isDuplicateKeyError } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
 import { BreakPlan, BREAK_PLAN_COLLATION } from "@/models/BreakPlan";
 import { Employee } from "@/models/Employee";
-import { Shift } from "@/models/Shift";
 
 const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 
@@ -61,21 +59,6 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         BREAK_PLAN_COLLATION
       );
       if (clash) return duplicate();
-    }
-
-    // New breaks must fit inside every shift this plan is used with.
-    if (changes.breaks) {
-      const shiftIds = await Employee.find({ breakPlan: id, shift: { $ne: null } }).distinct("shift");
-      const shifts = await Shift.find({ _id: { $in: shiftIds } }).lean();
-      for (const shift of shifts) {
-        const problem = breaksFitShift(changes.breaks, shift);
-        if (problem) {
-          return NextResponse.json(
-            { error: `This plan is used on the "${shift.name}" shift. ${problem}` },
-            { status: 409 }
-          );
-        }
-      }
     }
 
     await BreakPlan.updateOne({ _id: id }, { $set: changes }, { runValidators: true });

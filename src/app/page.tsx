@@ -1,10 +1,7 @@
-import Link from "next/link";
 import {
   MapPinned,
   Gauge,
-  ArrowRight,
   ShieldCheck,
-  ScanLine,
   UserCheck,
   MapPin,
   CheckCircle2,
@@ -48,15 +45,6 @@ export default function Home() {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3.5">
           <Brand />
-          <div className="flex items-center gap-2">
-            <Link
-              href="/checkin"
-              className="transition-smooth inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover active:scale-[0.98]"
-            >
-              Launch Check-In
-              <ArrowRight size={14} />
-            </Link>
-          </div>
         </div>
       </header>
 
@@ -92,23 +80,6 @@ export default function Home() {
             their own device, their location is validated against the office
             perimeter, and status is assigned automatically.
           </p>
-
-          <div
-            className="animate-fade-in-up mt-9 flex flex-col gap-3 sm:flex-row"
-            style={{ animationDelay: "240ms" }}
-          >
-            <Link
-              href="/checkin"
-              className="transition-smooth glow-accent group inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-medium text-accent-foreground hover:bg-accent-hover active:scale-[0.98]"
-            >
-              <ScanLine size={16} />
-              Employee Check-In
-              <ArrowRight
-                size={16}
-                className="transition-transform group-hover:translate-x-0.5"
-              />
-            </Link>
-          </div>
         </section>
 
         {/* Illustrative preview panel */}

@@ -115,7 +115,7 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (!existing) {
       return NextResponse.json({ error: "Employee not found." }, { status: 404 });
     }
-    const schedule = await resolveScheduleAssignment(body, existing);
+    const schedule = await resolveScheduleAssignment(body);
     if ("error" in schedule) return schedule.error;
 
     if (changes.name !== undefined) {

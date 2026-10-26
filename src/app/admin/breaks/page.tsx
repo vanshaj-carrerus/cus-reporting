@@ -24,8 +24,7 @@ export default async function AdminBreaksPage() {
         <h1 className="text-3xl font-semibold tracking-tight">Breaks</h1>
         <p className="text-sm text-muted">
           A break plan is a set of fixed break times (IST). Employees can&apos;t start or end a
-          break — it happens at these times. Assign a plan to each employee on the Employees tab,
-          and make sure its breaks fall inside the employee&apos;s shift.
+          break — it happens at these times. Assign a plan to each employee on the Employees tab.
         </p>
       </div>
 

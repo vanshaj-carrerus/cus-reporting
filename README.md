@@ -1,7 +1,7 @@
-# QR-Based Employee Attendance System
+# Employee Attendance System
 
-Employees scan a personalized QR code (linking to `/checkin/[employeeId]`),
-their browser location is captured, and the server validates it against a
+Employees check in from the mobile app (`cus-shift`),
+their location is captured, and the server validates it against a
 geo-fence around the office using the Haversine formula. HR reviews results
 on `/admin`.
 
@@ -51,8 +51,7 @@ on `/admin`.
   account just by knowing their email. Afterwards they sign in with email +
   password. Check-in and check-out are only available to a signed-in employee, for
   themselves. The mobile app (`cus-shift`) is the employee client.
-  **The old web `/checkin` pages and the `/qr` page no longer work** — they send
-  an employee id with no sign-in, which the API now rejects.
+  The web has no employee check-in pages; the old `/checkin` and `/qr` pages were removed.
 - **Admin dashboard**: `/admin` — lists the day's check-ins, color-coded by
   status, with a Google Maps link on each set of coordinates for auditing
   flagged (Out of Location) entries. Use the date picker to view other days, and
@@ -64,7 +63,7 @@ on `/admin`.
   you assign one.
 
 - **Shifts** (`/admin/shifts`): day or night shifts in IST (`HH:mm`; a shift that ends at or before its start runs past midnight). A check-in belongs to the IST date its shift *started* (`shiftDate`), so a night shift checked in after midnight still counts for the evening it began. "Late" is measured against the shift start + the shift's grace minutes; employees with no shift keep the old `SHIFT_CUTOFF_*` rule. Check-in opens `earlyCheckInMinutes` (default 120) before the shift.
-- **Breaks** (`/admin/breaks`): a *break plan* is a list of fixed IST windows (several allowed, no overlaps, each must fall inside the employee's shift). Assign a shift and a break plan per employee on `/admin/employees`, or to a whole department with the clock button on `/admin/departments`. Employees can't start or end a break.
+- **Breaks** (`/admin/breaks`): a *break plan* is a list of fixed IST windows (several allowed, any times, overlaps allowed). Assign a shift and a break plan per employee on `/admin/employees`, or to a whole department with the clock button on `/admin/departments`. Employees can't start or end a break.
 - **Outside the office**: while checked in, the app reports its location (`POST /api/presence`). The dashboard's **Outside right now** panel (refreshes every 30 s) shows who is *Outside* (not on a break), *On break*, *Break over - still outside*, or *No signal*. The rules live in one function, `classifyPresence` in `src/lib/shifts.ts` (tests: `npx tsx scripts/test-shifts.ts`). Rules for all shifts (alarm repeat interval, rings before it can be silenced, no-signal threshold, early check-in window) are on the Shifts page.
 
 ## Data model

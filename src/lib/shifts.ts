@@ -125,12 +125,11 @@ export function resolveBreaks(
 }
 
 /**
- * Checks a break plan's own rules: valid times, a non-empty window, and no two
- * windows overlapping (on the 24h clock, midnight included). Returns an error
+ * Checks a break plan's own rules: valid times and a non-empty window. Breaks
+ * may overlap each other and may sit anywhere on the clock. Returns an error
  * message, or null if fine.
  */
 export function validateBreakPlan(breaks: BreakTimes[]): string | null {
-  const spans: { name: string; start: number; length: number }[] = [];
   for (const b of breaks) {
     const startMin = parseHHmm(b.startTime);
     const endMin = parseHHmm(b.endTime);
@@ -140,31 +139,8 @@ export function validateBreakPlan(breaks: BreakTimes[]): string | null {
     if (startMin === endMin) {
       return `"${b.name}": start and end can't be the same time.`;
     }
-    spans.push({ name: b.name, start: startMin, length: spanMinutes(startMin, endMin) });
-  }
-  for (let i = 0; i < spans.length; i++) {
-    for (let j = i + 1; j < spans.length; j++) {
-      const a = spans[i];
-      const b = spans[j];
-      // Distance from a's start to b's start along the clock, and vice versa.
-      const ab = (b.start - a.start + DAY_MINUTES) % DAY_MINUTES;
-      const ba = (a.start - b.start + DAY_MINUTES) % DAY_MINUTES;
-      if (ab < a.length || ba < b.length) {
-        return `"${a.name}" and "${b.name}" overlap.`;
-      }
-    }
   }
   return null;
-}
-
-/** True if every break of the plan fits inside the shift on some day. */
-export function breaksFitShift(breaks: BreakTimes[], shift: ShiftTimes): string | null {
-  const instance = shiftWindow(shift, "2000-01-03");
-  const fitting = resolveBreaks(breaks, shift, instance);
-  if (fitting.length === breaks.length) return null;
-  const fitNames = new Set(fitting.map((b) => b.name));
-  const outside = breaks.find((b) => !fitNames.has(b.name));
-  return `The break "${outside?.name}" doesn't fall inside the shift ${shift.startTime}-${shift.endTime}.`;
 }
 
 /** Whether a check-in at `now` is late for this shift instance. */

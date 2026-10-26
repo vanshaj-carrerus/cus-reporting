@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { adminApiGuard } from "@/lib/adminAuth";
-import { breaksFitShift } from "@/lib/shifts";
 import { parseShiftBody } from "@/lib/shiftInput";
 import { isDuplicateKeyError } from "@/lib/mongoErrors";
 import { connectToDatabase } from "@/lib/mongodb";
-import { BreakPlan } from "@/models/BreakPlan";
 import { Employee } from "@/models/Employee";
 import { Shift, SHIFT_COLLATION } from "@/models/Shift";
 
@@ -52,25 +50,6 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
         SHIFT_COLLATION
       );
       if (clash) return duplicate();
-    }
-
-    // New times must still contain every break of the plans used on this shift.
-    const times = {
-      startTime: parsed.values.startTime ?? existing.startTime,
-      endTime: parsed.values.endTime ?? existing.endTime,
-    };
-    const planIds = await Employee.find({ shift: id, breakPlan: { $ne: null } }).distinct(
-      "breakPlan"
-    );
-    const plans = await BreakPlan.find({ _id: { $in: planIds } }).lean();
-    for (const plan of plans) {
-      const problem = breaksFitShift(plan.breaks, times);
-      if (problem) {
-        return NextResponse.json(
-          { error: `Break plan "${plan.name}" is used on this shift. ${problem}` },
-          { status: 409 }
-        );
-      }
     }
 
     await Shift.updateOne({ _id: id }, { $set: parsed.values }, { runValidators: true });

@@ -2,7 +2,6 @@
 // Checks the IST shift/break maths, including night shifts that cross midnight.
 import assert from "node:assert/strict";
 import {
-  breaksFitShift,
   classifyPresence,
   isLateForShift,
   resolveBreaks,
@@ -109,34 +108,27 @@ test("a break crossing midnight is kept whole", () => {
   assert.equal(iso(b.start), "2026-10-23T18:20:00.000Z");
 });
 
-test("breaks outside the shift are dropped / reported", () => {
+test("breaks outside the shift are dropped when resolving", () => {
   const plan = [{ name: "Lunch", startTime: "13:00", endTime: "13:45" }];
   assert.equal(resolveBreaks(plan, NIGHT, shiftWindow(NIGHT, "2026-10-23")).length, 0);
-  assert.match(breaksFitShift(plan, NIGHT) ?? "", /doesn't fall inside/);
-  assert.equal(breaksFitShift(plan, DAY), null);
 });
 
-test("a break running past shift end doesn't fit", () => {
-  const plan = [{ name: "Late", startTime: "17:45", endTime: "18:15" }];
-  assert.notEqual(breaksFitShift(plan, DAY), null);
-});
-
-test("break plan validation: bad times, empty, overlap incl. midnight", () => {
+test("break plan validation: bad times and empty windows only; overlaps allowed", () => {
   assert.match(validateBreakPlan([{ name: "A", startTime: "9:00", endTime: "10:00" }]) ?? "", /valid HH:mm/);
   assert.match(validateBreakPlan([{ name: "A", startTime: "10:00", endTime: "10:00" }]) ?? "", /same time/);
-  assert.match(
+  assert.equal(
     validateBreakPlan([
       { name: "A", startTime: "13:00", endTime: "14:00" },
       { name: "B", startTime: "13:30", endTime: "14:30" },
-    ]) ?? "",
-    /overlap/
+    ]),
+    null
   );
-  assert.match(
+  assert.equal(
     validateBreakPlan([
-      { name: "A", startTime: "23:50", endTime: "00:20" },
-      { name: "B", startTime: "00:10", endTime: "00:30" },
-    ]) ?? "",
-    /overlap/
+      { name: "A", startTime: "13:00", endTime: "01:45" },
+      { name: "B", startTime: "16:00", endTime: "16:04" },
+    ]),
+    null
   );
   assert.equal(
     validateBreakPlan([
