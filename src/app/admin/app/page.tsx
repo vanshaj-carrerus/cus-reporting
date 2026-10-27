@@ -6,6 +6,7 @@ import { connectToDatabase } from "@/lib/mongodb";
 import { Employee } from "@/models/Employee";
 import ReleaseForm from "./ReleaseForm";
 import { Smartphone } from "lucide-react";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,9 @@ export default async function AdminAppPage() {
 
       <div className="animate-fade-in-up mb-6 rounded-xl border border-border bg-surface p-4 text-sm">
         <div className="mb-1 font-medium">Download link for employees</div>
-        <p className="font-mono text-xs text-accent-text">/download</p>
+        <Link href={"/download"} className="font-mono text-xs text-accent-text">
+          /download
+        </Link>
         <p className="mt-1 text-xs text-muted">
           Opening it downloads the newest APK from{" "}
           <span className="font-mono">public/apk/latest/</span> (e.g.{" "}
