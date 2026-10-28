@@ -1,33 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireEmployee } from "@/lib/employeeAuth";
-import { isExpoPushToken } from "@/lib/pushNotify";
+import { isExpoPushToken, isWebPushSubscription } from "@/lib/pushNotify";
 import { Employee } from "@/models/Employee";
 
 const DB_ERROR = "Couldn't reach the database. Please try again in a moment.";
 
-// POST /api/push-token — body { token }. The signed-in employee's phone registers
-// where admin alerts should be delivered. A token belongs to one employee: if the
-// phone was used by someone else before, it moves.
+// POST /api/push-token — body { token } (Android app: an Expo push token) or
+// { subscription } (installed web app: a Web Push subscription). The signed-in
+// employee's phone registers where admin alerts should be delivered. A token belongs
+// to one employee: if the phone was used by someone else before, it moves.
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireEmployee(request);
     if ("denied" in auth) return auth.denied;
 
-    let body: { token?: unknown };
+    let body: { token?: unknown; subscription?: unknown };
     try {
       body = await request.json();
     } catch {
       return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
     }
-    if (!isExpoPushToken(body.token)) {
+    // A web subscription is stored as its JSON text, in the same field as an Expo token.
+    let token: string;
+    if (isWebPushSubscription(body.subscription)) {
+      const { endpoint, keys } = body.subscription;
+      token = JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } });
+    } else if (isExpoPushToken(body.token)) {
+      token = body.token;
+    } else {
       return NextResponse.json({ error: "A valid push token is required." }, { status: 400 });
     }
 
     await Employee.updateMany(
-      { pushToken: body.token, _id: { $ne: auth.employee._id } },
+      { pushToken: token, _id: { $ne: auth.employee._id } },
       { $unset: { pushToken: 1 } }
     );
-    await Employee.updateOne({ _id: auth.employee._id }, { $set: { pushToken: body.token } });
+    await Employee.updateOne({ _id: auth.employee._id }, { $set: { pushToken: token } });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("POST /api/push-token failed:", error);
